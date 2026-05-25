@@ -93,6 +93,10 @@ async def process_turn(
 
     ref_bytes = ref_path.read_bytes() if ref_path.exists() else None
     prosody_result = prosody_service.analyze_with_feedback(audio_bytes, ref_bytes)
+    try:
+        prosody_result.update(prosody_service.analyze_profile_score(audio_bytes))
+    except Exception as e:
+        print(f"[scenario] profile score calculation failed: {e}")
     feedback_text = prosody_result.get("feedback")
 
     if prosody_result.get("pitch_contour"):
@@ -120,8 +124,22 @@ async def process_turn(
             syllable_count_ref=prosody_result.get("syllable_count_ref"),
             voiced_ratio_score=prosody_result.get("voiced_ratio_score"),
             pitch_slope_score=prosody_result.get("pitch_slope_score"),
+            profile_score=prosody_result.get("profile_score"),
+            native_distance=prosody_result.get("native_distance"),
+            russian_distance=prosody_result.get("russian_distance"),
+            profile_features=prosody_result.get("profile_features"),
+            profile_intonation_score=prosody_result.get("profile_intonation_score"),
+            profile_rhythm_score=prosody_result.get("profile_rhythm_score"),
+            profile_voice_score=prosody_result.get("profile_voice_score"),
+            profile_mfcc_score=prosody_result.get("profile_mfcc_score"),
+            profile_stress_score=prosody_result.get("profile_stress_score"),
+            profile_vowel_score=prosody_result.get("profile_vowel_score"),
+            profile_syllable_score=prosody_result.get("profile_syllable_score"),
+            profile_slope_score=prosody_result.get("profile_slope_score"),
         )
-        if prosody_result.get("composite_score") is not None:
+        if prosody_result.get("profile_score") is not None:
+            total_score = prosody_result.get("profile_score")
+        elif prosody_result.get("composite_score") is not None:
             total_score = scoring_service.compute_total_score(prosody.composite_score, None)
         elif prosody_result.get("score") is not None:
             total_score = scoring_service.compute_total_score(prosody.score, None)

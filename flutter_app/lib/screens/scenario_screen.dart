@@ -31,14 +31,38 @@ class _ScenarioScreenState extends State<ScenarioScreen> {
   DateTime? _recordingStartTime;
   double _totalScore = 0;
   int _scoreCount = 0;
+  double _profileTotal = 0;
+  double _intonationTotal = 0;
   double _rhythmTotal = 0;
-  double _stressTotal = 0;
   double _mfccTotal = 0;
-  int _subScoreCount = 0;
+  double _voiceTotal = 0;
+  double _stressTotal = 0;
+  double _vowelTotal = 0;
+  double _syllableTotal = 0;
+  double _slopeTotal = 0;
+  int _profileScoreCount = 0;
+  int _intonationCount = 0;
+  int _rhythmCount = 0;
+  int _mfccCount = 0;
+  int _voiceCount = 0;
+  int _stressCount = 0;
+  int _vowelCount = 0;
+  int _syllableCount = 0;
+  int _slopeCount = 0;
   String? _lastHint;
   String? _lastRefAudioUrl;
 
   static const int _maxTurns = 4;
+
+  static String _firstSentence(String text) {
+    return text.trim().split('\n').first.trim();
+  }
+
+  void _accumulateMetric(double? value, void Function(double) add, void Function() bump) {
+    if (value == null) return;
+    add(value);
+    bump();
+  }
 
   @override
   void initState() {
@@ -66,6 +90,7 @@ class _ScenarioScreenState extends State<ScenarioScreen> {
           text: reply,
           isAi: true,
           hint: hint,
+          ttsUrl: '${AppConstants.baseUrl}/api/tts?text=${Uri.encodeComponent(_firstSentence(reply))}',
         ));
         _history.add({'role': 'model', 'text': reply});
         _lastHint = hint;
@@ -165,28 +190,32 @@ class _ScenarioScreenState extends State<ScenarioScreen> {
         text: result.stt.text.isEmpty ? '(알아듣지 못했어요)' : result.stt.text,
         isAi: false,
         prosody: result.prosody,
-        score: result.totalScore,
+        score: result.prosody?.profileScore ?? result.totalScore,
         prosodyFeedback: result.prosodyFeedback,
         refAudioUrl: refAudioUrl,
         words: result.stt.words,
       ));
     });
 
-    if (result.totalScore != null) {
-      _totalScore += result.totalScore!;
+    final scoreForSummary = result.prosody?.profileScore ?? result.totalScore;
+    if (scoreForSummary != null) {
+      _totalScore += scoreForSummary;
       _scoreCount++;
     }
 
     final p = result.prosody;
-    if (p != null &&
-        p.rhythmScore != null &&
-        p.stressScore != null &&
-        p.mfccCosineScore != null) {
-      _rhythmTotal += p.rhythmScore!;
-      _stressTotal += p.stressScore!;
-      _mfccTotal += p.mfccCosineScore!;
-      _subScoreCount++;
+    if (p?.profileScore != null) {
+      _profileTotal += p!.profileScore!;
+      _profileScoreCount++;
     }
+    _accumulateMetric(p?.profileIntonationScore, (v) => _intonationTotal += v, () => _intonationCount++);
+    _accumulateMetric(p?.profileRhythmScore, (v) => _rhythmTotal += v, () => _rhythmCount++);
+    _accumulateMetric(p?.profileMfccScore, (v) => _mfccTotal += v, () => _mfccCount++);
+    _accumulateMetric(p?.profileVoiceScore, (v) => _voiceTotal += v, () => _voiceCount++);
+    _accumulateMetric(p?.profileStressScore, (v) => _stressTotal += v, () => _stressCount++);
+    _accumulateMetric(p?.profileVowelScore, (v) => _vowelTotal += v, () => _vowelCount++);
+    _accumulateMetric(p?.profileSyllableScore, (v) => _syllableTotal += v, () => _syllableCount++);
+    _accumulateMetric(p?.profileSlopeScore, (v) => _slopeTotal += v, () => _slopeCount++);
 
     _history.add({'role': 'user', 'text': result.stt.text});
 
@@ -196,6 +225,7 @@ class _ScenarioScreenState extends State<ScenarioScreen> {
         isAi: true,
         hint: result.chat.hint,
         hintRu: result.chat.hintRu,
+        ttsUrl: '${AppConstants.baseUrl}/api/tts?text=${Uri.encodeComponent(_firstSentence(result.chat.reply))}',
       ));
       _lastHint = result.chat.hintRu ?? result.chat.hint;
       _history.add({'role': 'model', 'text': result.chat.reply});
@@ -208,9 +238,17 @@ class _ScenarioScreenState extends State<ScenarioScreen> {
       Future.delayed(const Duration(milliseconds: 800), () {
         if (!mounted) return;
         final avgScore = _scoreCount > 0 ? _totalScore / _scoreCount : null;
-        final avgRhythm = _subScoreCount > 0 ? _rhythmTotal / _subScoreCount : null;
-        final avgStress = _subScoreCount > 0 ? _stressTotal / _subScoreCount : null;
-        final avgMfcc = _subScoreCount > 0 ? _mfccTotal / _subScoreCount : null;
+        final avgProfile = _profileScoreCount > 0
+            ? _profileTotal / _profileScoreCount
+            : null;
+        final avgIntonation = _intonationCount > 0 ? _intonationTotal / _intonationCount : null;
+        final avgRhythm = _rhythmCount > 0 ? _rhythmTotal / _rhythmCount : null;
+        final avgMfcc = _mfccCount > 0 ? _mfccTotal / _mfccCount : null;
+        final avgVoice = _voiceCount > 0 ? _voiceTotal / _voiceCount : null;
+        final avgStress = _stressCount > 0 ? _stressTotal / _stressCount : null;
+        final avgVowel = _vowelCount > 0 ? _vowelTotal / _vowelCount : null;
+        final avgSyllable = _syllableCount > 0 ? _syllableTotal / _syllableCount : null;
+        final avgSlope = _slopeCount > 0 ? _slopeTotal / _slopeCount : null;
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
@@ -218,9 +256,15 @@ class _ScenarioScreenState extends State<ScenarioScreen> {
               scenario: widget.scenario,
               totalScore: avgScore,
               turnCount: _turnIndex,
+              profileScore: avgProfile,
+              intonationScore: avgIntonation,
               rhythmScore: avgRhythm,
-              stressScore: avgStress,
               mfccScore: avgMfcc,
+              voiceScore: avgVoice,
+              stressScore: avgStress,
+              vowelScore: avgVowel,
+              syllableScore: avgSyllable,
+              slopeScore: avgSlope,
             ),
           ),
         );
@@ -512,6 +556,7 @@ class _ChatMessage {
   final double? score;
   final String? prosodyFeedback;
   final String? refAudioUrl;
+  final String? ttsUrl;
   final List<WordScore> words;
 
   _ChatMessage({
@@ -523,6 +568,7 @@ class _ChatMessage {
     this.score,
     this.prosodyFeedback,
     this.refAudioUrl,
+    this.ttsUrl,
     this.words = const [],
   });
 }
@@ -548,8 +594,7 @@ class _MessageBubbleState extends State<_MessageBubble> {
     super.dispose();
   }
 
-  Future<void> _togglePlay() async {
-    final url = widget.message.refAudioUrl!;
+  Future<void> _togglePlay(String url) async {
     if (_isPlaying) {
       await _player?.stop();
       if (mounted) {
@@ -677,6 +722,28 @@ class _MessageBubbleState extends State<_MessageBubble> {
                 ),
               ),
             ),
+          if (isAi && widget.message.ttsUrl != null) ...[
+            const SizedBox(height: 4),
+            Padding(
+              padding: const EdgeInsets.only(left: 48),
+              child: TextButton.icon(
+                onPressed: () => _togglePlay(widget.message.ttsUrl!),
+                icon: Icon(
+                  _isPlaying ? Icons.stop_circle_outlined : Icons.volume_up_outlined,
+                  size: 16,
+                  color: Colors.grey[600],
+                ),
+                label: Text(
+                  _isPlaying ? '멈추기' : '들어봐요',
+                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                ),
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  minimumSize: Size.zero,
+                ),
+              ),
+            ),
+          ],
           if (!isAi && widget.message.prosodyFeedback != null) ...[
             const SizedBox(height: 6),
             Container(
@@ -713,7 +780,7 @@ class _MessageBubbleState extends State<_MessageBubble> {
             Align(
               alignment: Alignment.centerRight,
               child: TextButton.icon(
-                onPressed: _togglePlay,
+                onPressed: () => _togglePlay(widget.message.refAudioUrl!),
                 icon: Icon(
                   _isPlaying ? Icons.stop_circle_outlined : Icons.volume_up_outlined,
                   size: 18,
@@ -770,7 +837,7 @@ class _MessageBubbleState extends State<_MessageBubble> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _ScoreBreakdown(prosody: widget.message.prosody!),
+                    _NineMetricBreakdown(prosody: widget.message.prosody!),
                     const SizedBox(height: 12),
                     PitchChart(
                       userPitch: widget.message.prosody!.pitchContour,
@@ -818,6 +885,7 @@ class _ScoreBadge extends StatelessWidget {
   }
 }
 
+// ignore: unused_element
 class _ScoreBreakdown extends StatelessWidget {
   final ProsodyResult prosody;
 
@@ -825,20 +893,16 @@ class _ScoreBreakdown extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (prosody.compositeScore == null) return const SizedBox.shrink();
-
     final items = <MapEntry<String, double>>[
-      MapEntry('억양', prosody.score),
-      if (prosody.rhythmScore != null) MapEntry('리듬', prosody.rhythmScore!),
-      if (prosody.stressScore != null) MapEntry('강세', prosody.stressScore!),
-      if (prosody.mfccCosineScore != null) MapEntry('음색', prosody.mfccCosineScore!),
-      if (prosody.formantScore != null) MapEntry('모음', prosody.formantScore!),
-      if (prosody.syllableScore != null) MapEntry('음절', prosody.syllableScore!),
-      if (prosody.voicedRatioScore != null) MapEntry('발성', prosody.voicedRatioScore!),
-      if (prosody.pitchSlopeScore != null) MapEntry('기울기', prosody.pitchSlopeScore!),
+      if (prosody.profileScore != null) MapEntry('한국어 근접도', prosody.profileScore!),
+      if (prosody.profileIntonationScore != null) MapEntry('억양', prosody.profileIntonationScore!),
+      if (prosody.profileRhythmScore != null) MapEntry('리듬', prosody.profileRhythmScore!),
+      if (prosody.profileMfccScore != null) MapEntry('음색', prosody.profileMfccScore!),
+      if (prosody.profileVoiceScore != null) MapEntry('발성', prosody.profileVoiceScore!),
     ];
 
-    final hasRhythmDetail = prosody.speechRateUser != null &&
+    final hasRhythmDetail = prosody.profileScore == null &&
+        prosody.speechRateUser != null &&
         prosody.speechRateRef != null &&
         prosody.pauseCountUser != null &&
         prosody.pauseCountRef != null;
@@ -949,6 +1013,47 @@ class _RhythmDetailRow extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _NineMetricBreakdown extends StatelessWidget {
+  final ProsodyResult prosody;
+
+  const _NineMetricBreakdown({required this.prosody});
+
+  @override
+  Widget build(BuildContext context) {
+    final items = <MapEntry<String, double>>[
+      if (prosody.profileScore != null) MapEntry('한국어 근접도', prosody.profileScore!),
+      if (prosody.profileIntonationScore != null) MapEntry('억양', prosody.profileIntonationScore!),
+      if (prosody.profileRhythmScore != null) MapEntry('리듬', prosody.profileRhythmScore!),
+      if (prosody.profileMfccScore != null) MapEntry('음색', prosody.profileMfccScore!),
+      if (prosody.profileVoiceScore != null) MapEntry('발성', prosody.profileVoiceScore!),
+      if (prosody.profileStressScore != null) MapEntry('강세', prosody.profileStressScore!),
+      if (prosody.profileVowelScore != null) MapEntry('모음', prosody.profileVowelScore!),
+      if (prosody.profileSyllableScore != null) MapEntry('음절', prosody.profileSyllableScore!),
+      if (prosody.profileSlopeScore != null) MapEntry('기울기', prosody.profileSlopeScore!),
+    ];
+
+    if (items.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          '점수 세부',
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.bold,
+            color: Colors.black54,
+          ),
+        ),
+        const SizedBox(height: 6),
+        ...items.map((entry) => _ScoreBar(label: entry.key, score: entry.value)),
+      ],
     );
   }
 }

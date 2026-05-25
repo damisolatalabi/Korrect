@@ -3,6 +3,7 @@ Damisola 담당 - 운율 분석 서비스
 librosa(+Praat/parselmouth) 기반 피치 · 리듬 · 강세 · 음색(MFCC)을 추출하고
 DTW / Cosine 유사도로 원어민 대비 점수를 산출한다.
 """
+import json
 import os
 import tempfile
 from pathlib import Path
@@ -14,6 +15,10 @@ from scipy.spatial.distance import euclidean, cosine
 # ── 러시아 억양 프로필 로드 ────────────────────────────────────────────
 _RUSSIAN_PROFILE_PATH = Path(__file__).parent.parent / "data" / "russian_accent_profile.npy"
 _russian_profile: np.ndarray | None = None
+_NATIVE_SPEECH_PROFILE_PATH = Path(__file__).parent.parent / "data" / "native_profile.json"
+_RUSSIAN_SPEECH_PROFILE_PATH = Path(__file__).parent.parent / "data" / "russian_profile.json"
+_native_speech_profile: dict | None = None
+_russian_speech_profile: dict | None = None
 
 def _get_russian_profile() -> np.ndarray | None:
     global _russian_profile
@@ -313,6 +318,186 @@ def extract_mfcc(audio_bytes: bytes) -> np.ndarray:
         return mfcc.mean(axis=1)
     finally:
         os.unlink(tmp_path)
+
+
+def _get_speech_profiles() -> tuple[dict | None, dict | None]:
+    global _native_speech_profile, _russian_speech_profile
+    if _native_speech_profile is None and _NATIVE_SPEECH_PROFILE_PATH.exists():
+        with open(_NATIVE_SPEECH_PROFILE_PATH, encoding="utf-8") as f:
+            _native_speech_profile = json.load(f)
+    if _russian_speech_profile is None and _RUSSIAN_SPEECH_PROFILE_PATH.exists():
+        with open(_RUSSIAN_SPEECH_PROFILE_PATH, encoding="utf-8") as f:
+            _russian_speech_profile = json.load(f)
+    return _native_speech_profile, _russian_speech_profile
+
+
+def _voiced_ratio(pitch: np.ndarray) -> float | None:
+    voiced_idx = np.where(pitch > 0)[0]
+    if len(voiced_idx) == 0:
+        return None
+    segment = pitch[voiced_idx[0]: voiced_idx[-1] + 1]
+    if len(segment) == 0:
+        return None
+    return round(float(np.sum(segment > 0) / len(segment)), 4)
+
+
+def extract_profile_features(audio_bytes: bytes) -> dict:
+    pitch = extract_pitch(audio_bytes)
+    voiced = pitch[pitch > 0]
+    rate_info = extract_speech_rate(audio_bytes)
+    pause_info = extract_pause_pattern(audio_bytes)
+    energy = extract_energy(audio_bytes)
+    mfcc = extract_mfcc(audio_bytes)
+    formant_f1, formant_f2 = extract_formants(audio_bytes)
+    voiced_f1 = formant_f1[formant_f1 > 0] if len(formant_f1) else np.array([])
+    voiced_f2 = formant_f2[formant_f2 > 0] if len(formant_f2) else np.array([])
+
+    pitch_slope = None
+    if len(voiced) >= 5:
+        target = 50
+        x = np.linspace(0, 1, len(voiced))
+        y = np.interp(np.linspace(0, 1, target), x, voiced)
+        pitch_slope = round(float(np.polyfit(np.arange(target), y, 1)[0]), 4)
+
+    return {
+        "mfcc_mean": [round(float(v), 6) for v in mfcc.tolist()] if len(mfcc) else [],
+        "pitch_mean": round(float(np.mean(voiced)), 4) if len(voiced) else None,
+        "pitch_std": round(float(np.std(voiced)), 4) if len(voiced) else None,
+        "pitch_range": round(float(np.max(voiced) - np.min(voiced)), 4) if len(voiced) else None,
+        "speech_rate": float(rate_info["rate"]) if rate_info.get("rate") is not None else None,
+        "pause_count": int(pause_info.get("pause_count", 0)),
+        "pause_total_duration": float(pause_info.get("total_pause_duration", 0.0)),
+        "voiced_ratio": _voiced_ratio(pitch),
+        "energy_mean": round(float(np.mean(energy)), 4) if len(energy) else None,
+        "energy_std": round(float(np.std(energy)), 4) if len(energy) else None,
+        "pitch_slope": pitch_slope,
+        "syllable_count": int(rate_info.get("syllable_count", 0)),
+        "formant_f1_mean": round(float(np.mean(voiced_f1)), 4) if len(voiced_f1) else None,
+        "formant_f2_mean": round(float(np.mean(voiced_f2)), 4) if len(voiced_f2) else None,
+    }
+
+
+def _scalar_profile_distance(value: float | None, profile: dict, name: str) -> float | None:
+    if value is None:
+        return None
+    mean = profile.get(f"{name}_mean")
+    std = profile.get(f"{name}_std")
+    if mean is None:
+        return None
+    denom = float(std or 0.0)
+    if denom < 1e-6:
+        denom = max(abs(float(mean)), 1.0)
+    return abs(float(value) - float(mean)) / denom
+
+
+def _vector_profile_distance(features: dict, profile: dict, name: str) -> float | None:
+    user_vec = np.array(features.get(name) or [], dtype=float)
+    profile_vec = np.array(profile.get(name) or [], dtype=float)
+    if not len(user_vec) or len(user_vec) != len(profile_vec):
+        return None
+    return float(cosine(user_vec, profile_vec))
+
+
+def _profile_distance(features: dict, profile: dict) -> tuple[float | None, dict]:
+    weights = {
+        "mfcc_mean": 0.35,
+        "pitch_std": 0.10,
+        "pitch_range": 0.10,
+        "speech_rate": 0.15,
+        "pause_count": 0.15,
+        "voiced_ratio": 0.15,
+    }
+    parts: dict[str, float] = {}
+
+    parts["mfcc_mean"] = _vector_profile_distance(features, profile, "mfcc_mean")
+
+    for name in ("pitch_std", "pitch_range", "speech_rate", "pause_count", "voiced_ratio"):
+        parts[name] = _scalar_profile_distance(features.get(name), profile, name)
+
+    valid = {name: value for name, value in parts.items() if value is not None}
+    if not valid:
+        return None, {}
+    total_weight = sum(weights[name] for name in valid)
+    weighted = sum(valid[name] * weights[name] for name in valid) / total_weight
+    return round(float(weighted), 4), {k: round(float(v), 4) for k, v in valid.items()}
+
+
+def _two_axis_score(native_distance: float | None, russian_distance: float | None) -> float | None:
+    if native_distance is None or russian_distance is None:
+        return None
+    total = native_distance + russian_distance
+    if total <= 1e-9:
+        return 50.0
+    return round(max(0.0, min(100.0, (russian_distance / total) * 100.0)), 1)
+
+
+def _native_axis_score(distance: float | None, max_distance: float = 4.0) -> float | None:
+    if distance is None:
+        return None
+    if distance < 0:
+        return 0.0
+    return round(max(0.0, min(100.0, 100.0 - (distance / max_distance) * 100.0)), 1)
+
+
+def _feature_group_distance(features: dict, profile: dict, names: tuple[str, ...]) -> float | None:
+    distances = []
+    for name in names:
+        distance = _scalar_profile_distance(features.get(name), profile, name)
+        if distance is not None:
+            distances.append(distance)
+    if not distances:
+        return None
+    return round(float(sum(distances) / len(distances)), 4)
+
+
+def _profile_subscores(features: dict, native_profile: dict, russian_profile: dict) -> dict:
+    native_mfcc_distance = _vector_profile_distance(features, native_profile, "mfcc_mean")
+    russian_mfcc_distance = _vector_profile_distance(features, russian_profile, "mfcc_mean")
+
+    intonation_native = _feature_group_distance(features, native_profile, ("pitch_std", "pitch_range"))
+    intonation_russian = _feature_group_distance(features, russian_profile, ("pitch_std", "pitch_range"))
+    rhythm_native = _feature_group_distance(features, native_profile, ("speech_rate", "pause_count"))
+    rhythm_russian = _feature_group_distance(features, russian_profile, ("speech_rate", "pause_count"))
+    voice_native = _scalar_profile_distance(features.get("voiced_ratio"), native_profile, "voiced_ratio")
+    voice_russian = _scalar_profile_distance(features.get("voiced_ratio"), russian_profile, "voiced_ratio")
+    stress_native = _feature_group_distance(features, native_profile, ("energy_mean", "energy_std"))
+    vowel_native = _feature_group_distance(features, native_profile, ("formant_f1_mean", "formant_f2_mean"))
+    syllable_native = _feature_group_distance(features, native_profile, ("syllable_count",))
+    slope_native = _feature_group_distance(features, native_profile, ("pitch_slope",))
+
+    return {
+        "profile_intonation_score": _two_axis_score(intonation_native, intonation_russian),
+        "profile_rhythm_score": _two_axis_score(rhythm_native, rhythm_russian),
+        "profile_voice_score": _two_axis_score(voice_native, voice_russian),
+        "profile_mfcc_score": _two_axis_score(native_mfcc_distance, russian_mfcc_distance),
+        "profile_stress_score": _native_axis_score(stress_native),
+        "profile_vowel_score": _native_axis_score(vowel_native),
+        "profile_syllable_score": _native_axis_score(syllable_native),
+        "profile_slope_score": _native_axis_score(slope_native),
+    }
+
+
+def analyze_profile_score(audio_bytes: bytes) -> dict:
+    native_profile, russian_profile = _get_speech_profiles()
+    if native_profile is None or russian_profile is None:
+        return {}
+
+    features = extract_profile_features(audio_bytes)
+    native_distance, native_parts = _profile_distance(features, native_profile)
+    russian_distance, russian_parts = _profile_distance(features, russian_profile)
+    subscores = _profile_subscores(features, native_profile, russian_profile)
+
+    return {
+        "profile_score": _two_axis_score(native_distance, russian_distance),
+        "native_distance": native_distance,
+        "russian_distance": russian_distance,
+        "profile_features": features,
+        **subscores,
+        "profile_distance_parts": {
+            "native": native_parts,
+            "russian": russian_parts,
+        },
+    }
 
 
 # ── 러시아어 억양 감지 (기존) ─────────────────────────────────────────

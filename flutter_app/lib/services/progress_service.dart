@@ -8,6 +8,12 @@ class SessionRecord {
   final double? rhythmScore;
   final double? stressScore;
   final double? mfccScore;
+  final double? profileScore;
+  final double? intonationScore;
+  final double? voiceScore;
+  final double? vowelScore;
+  final double? syllableScore;
+  final double? slopeScore;
   final int turnCount;
   final DateTime date;
 
@@ -18,6 +24,12 @@ class SessionRecord {
     this.rhythmScore,
     this.stressScore,
     this.mfccScore,
+    this.profileScore,
+    this.intonationScore,
+    this.voiceScore,
+    this.vowelScore,
+    this.syllableScore,
+    this.slopeScore,
     required this.turnCount,
     required this.date,
   });
@@ -29,6 +41,12 @@ class SessionRecord {
         'rhythmScore': rhythmScore,
         'stressScore': stressScore,
         'mfccScore': mfccScore,
+        'profileScore': profileScore,
+        'intonationScore': intonationScore,
+        'voiceScore': voiceScore,
+        'vowelScore': vowelScore,
+        'syllableScore': syllableScore,
+        'slopeScore': slopeScore,
         'turnCount': turnCount,
         'date': date.toIso8601String(),
       };
@@ -47,6 +65,24 @@ class SessionRecord {
             : null,
         mfccScore: json['mfccScore'] != null
             ? (json['mfccScore'] as num).toDouble()
+            : null,
+        profileScore: json['profileScore'] != null
+            ? (json['profileScore'] as num).toDouble()
+            : null,
+        intonationScore: json['intonationScore'] != null
+            ? (json['intonationScore'] as num).toDouble()
+            : null,
+        voiceScore: json['voiceScore'] != null
+            ? (json['voiceScore'] as num).toDouble()
+            : null,
+        vowelScore: json['vowelScore'] != null
+            ? (json['vowelScore'] as num).toDouble()
+            : null,
+        syllableScore: json['syllableScore'] != null
+            ? (json['syllableScore'] as num).toDouble()
+            : null,
+        slopeScore: json['slopeScore'] != null
+            ? (json['slopeScore'] as num).toDouble()
             : null,
         turnCount: json['turnCount'] as int,
         date: DateTime.parse(json['date'] as String),
