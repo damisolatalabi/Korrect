@@ -5,8 +5,11 @@ import '../models/scenario_model.dart';
 import '../models/process_result.dart';
 import '../services/api_service.dart';
 import '../services/audio_service.dart';
+import '../services/progress_service.dart';
 import '../widgets/record_button.dart';
 import '../widgets/pitch_chart.dart';
+import '../utils/score_band.dart';
+import 'progress_screen.dart';
 import 'result_screen.dart';
 
 class ScenarioScreen extends StatefulWidget {
@@ -21,6 +24,8 @@ class ScenarioScreen extends StatefulWidget {
 class _ScenarioScreenState extends State<ScenarioScreen> {
   final List<_ChatMessage> _messages = [];
   final List<Map<String, String>> _history = [];
+  final List<WordRecord> _wordRecords = [];
+  final List<TurnRecord> _turnRecords = [];
   final ScrollController _scrollController = ScrollController();
 
   RefPlayer? _referencePlayer;
@@ -51,6 +56,7 @@ class _ScenarioScreenState extends State<ScenarioScreen> {
   int _slopeCount = 0;
   String? _lastHint;
   String? _lastRefAudioUrl;
+  final String _sessionId = DateTime.now().microsecondsSinceEpoch.toString();
 
   static const int _maxTurns = 4;
 
@@ -62,6 +68,79 @@ class _ScenarioScreenState extends State<ScenarioScreen> {
     if (value == null) return;
     add(value);
     bump();
+  }
+
+  SessionRecord? _buildSessionRecord() {
+    if (_turnIndex == 0) {
+      return null;
+    }
+
+    return SessionRecord(
+      sessionId: _sessionId,
+      scenarioId: widget.scenario.id,
+      scenarioTitle: widget.scenario.title,
+      totalScore: _scoreCount > 0 ? _totalScore / _scoreCount : null,
+      profileScore: _profileScoreCount > 0 ? _profileTotal / _profileScoreCount : null,
+      intonationScore: _intonationCount > 0 ? _intonationTotal / _intonationCount : null,
+      rhythmScore: _rhythmCount > 0 ? _rhythmTotal / _rhythmCount : null,
+      mfccScore: _mfccCount > 0 ? _mfccTotal / _mfccCount : null,
+      voiceScore: _voiceCount > 0 ? _voiceTotal / _voiceCount : null,
+      stressScore: _stressCount > 0 ? _stressTotal / _stressCount : null,
+      vowelScore: _vowelCount > 0 ? _vowelTotal / _vowelCount : null,
+      syllableScore: _syllableCount > 0 ? _syllableTotal / _syllableCount : null,
+      slopeScore: _slopeCount > 0 ? _slopeTotal / _slopeCount : null,
+      wordRecords: List<WordRecord>.from(_wordRecords),
+      turnRecords: List<TurnRecord>.from(_turnRecords),
+      turnCount: _turnIndex,
+      date: DateTime.now(),
+    );
+  }
+
+  // 매 턴 호출. 같은 _sessionId 기록을 갱신하므로 중복 저장되지 않는다.
+  Future<void> _persistProgress() async {
+    final record = _buildSessionRecord();
+    if (record == null) {
+      return;
+    }
+    await ProgressService.saveOrUpdateSession(record);
+  }
+
+  Future<void> _openProgressScreen() async {
+    await _persistProgress();
+    if (!mounted) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const ProgressScreen()),
+    );
+  }
+
+  Future<void> _openResultScreen() async {
+    final record = _buildSessionRecord();
+    if (record == null) {
+      return;
+    }
+    await _persistProgress();
+    if (!mounted) return;
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ResultScreen(
+          scenario: widget.scenario,
+          totalScore: record.totalScore,
+          turnCount: record.turnCount,
+          profileScore: record.profileScore,
+          intonationScore: record.intonationScore,
+          rhythmScore: record.rhythmScore,
+          mfccScore: record.mfccScore,
+          voiceScore: record.voiceScore,
+          stressScore: record.stressScore,
+          vowelScore: record.vowelScore,
+          syllableScore: record.syllableScore,
+          slopeScore: record.slopeScore,
+          wordRecords: record.wordRecords,
+        ),
+      ),
+    );
   }
 
   @override
@@ -178,6 +257,11 @@ class _ScenarioScreenState extends State<ScenarioScreen> {
   }
 
   void _handleResult(ProcessResult result) {
+    final p = result.prosody;
+    // 신호가 또렷하지 않으면(소음·무음·너무 짧음) 점수를 보류하고 집계에서 제외한다.
+    final reliable = p?.reliable ?? true;
+    final scoreForSummary = result.prosody?.profileScore ?? result.totalScore;
+
     setState(() {
       final sttText = result.stt.text.trim();
       final refAudioUrl = sttText.isNotEmpty
@@ -189,33 +273,62 @@ class _ScenarioScreenState extends State<ScenarioScreen> {
       _messages.add(_ChatMessage(
         text: result.stt.text.isEmpty ? '(알아듣지 못했어요)' : result.stt.text,
         isAi: false,
-        prosody: result.prosody,
-        score: result.prosody?.profileScore ?? result.totalScore,
-        prosodyFeedback: result.prosodyFeedback,
+        prosody: reliable ? result.prosody : null,
+        score: reliable ? scoreForSummary : null,
+        prosodyFeedback: reliable ? result.prosodyFeedback : null,
+        lowSignal: !reliable,
         refAudioUrl: refAudioUrl,
         words: result.stt.words,
       ));
     });
 
-    final scoreForSummary = result.prosody?.profileScore ?? result.totalScore;
-    if (scoreForSummary != null) {
-      _totalScore += scoreForSummary;
-      _scoreCount++;
-    }
+    // 신뢰할 수 없는 턴은 점수/세부지표를 누적하지 않는다 (평균 오염 방지).
+    if (reliable) {
+      if (scoreForSummary != null) {
+        _totalScore += scoreForSummary;
+        _scoreCount++;
+      }
 
-    final p = result.prosody;
-    if (p?.profileScore != null) {
-      _profileTotal += p!.profileScore!;
-      _profileScoreCount++;
+      final currentTurnWords = <WordRecord>[];
+      for (final word in result.stt.words) {
+        final text = word.word.trim();
+        if (text.isEmpty) continue;
+        final record = WordRecord(
+          word: text,
+          score: word.score,
+          vowelScore: p?.profileVowelScore, // 발화 단위 게이트
+          formantF1: word.formantF1, // 단어 단위 포먼트
+          formantF2: word.formantF2,
+        );
+        _wordRecords.add(record);
+        currentTurnWords.add(record);
+      }
+      _turnRecords.add(TurnRecord(
+        turnNumber: _turnIndex + 1,
+        text: result.stt.text.trim(),
+        totalScore: scoreForSummary,
+        profileScore: p?.profileScore,
+        intonationScore: p?.profileIntonationScore,
+        rhythmScore: p?.profileRhythmScore,
+        mfccScore: p?.profileMfccScore,
+        voiceScore: p?.profileVoiceScore,
+        vowelScore: p?.profileVowelScore,
+        wordRecords: currentTurnWords,
+        date: DateTime.now(),
+      ));
+      if (p?.profileScore != null) {
+        _profileTotal += p!.profileScore!;
+        _profileScoreCount++;
+      }
+      _accumulateMetric(p?.profileIntonationScore, (v) => _intonationTotal += v, () => _intonationCount++);
+      _accumulateMetric(p?.profileRhythmScore, (v) => _rhythmTotal += v, () => _rhythmCount++);
+      _accumulateMetric(p?.profileMfccScore, (v) => _mfccTotal += v, () => _mfccCount++);
+      _accumulateMetric(p?.profileVoiceScore, (v) => _voiceTotal += v, () => _voiceCount++);
+      _accumulateMetric(p?.profileStressScore, (v) => _stressTotal += v, () => _stressCount++);
+      _accumulateMetric(p?.profileVowelScore, (v) => _vowelTotal += v, () => _vowelCount++);
+      _accumulateMetric(p?.profileSyllableScore, (v) => _syllableTotal += v, () => _syllableCount++);
+      _accumulateMetric(p?.profileSlopeScore, (v) => _slopeTotal += v, () => _slopeCount++);
     }
-    _accumulateMetric(p?.profileIntonationScore, (v) => _intonationTotal += v, () => _intonationCount++);
-    _accumulateMetric(p?.profileRhythmScore, (v) => _rhythmTotal += v, () => _rhythmCount++);
-    _accumulateMetric(p?.profileMfccScore, (v) => _mfccTotal += v, () => _mfccCount++);
-    _accumulateMetric(p?.profileVoiceScore, (v) => _voiceTotal += v, () => _voiceCount++);
-    _accumulateMetric(p?.profileStressScore, (v) => _stressTotal += v, () => _stressCount++);
-    _accumulateMetric(p?.profileVowelScore, (v) => _vowelTotal += v, () => _vowelCount++);
-    _accumulateMetric(p?.profileSyllableScore, (v) => _syllableTotal += v, () => _syllableCount++);
-    _accumulateMetric(p?.profileSlopeScore, (v) => _slopeTotal += v, () => _slopeCount++);
 
     _history.add({'role': 'user', 'text': result.stt.text});
 
@@ -234,42 +347,9 @@ class _ScenarioScreenState extends State<ScenarioScreen> {
 
     _scrollToBottom();
 
-    if (_turnIndex >= _maxTurns) {
-      Future.delayed(const Duration(milliseconds: 800), () {
-        if (!mounted) return;
-        final avgScore = _scoreCount > 0 ? _totalScore / _scoreCount : null;
-        final avgProfile = _profileScoreCount > 0
-            ? _profileTotal / _profileScoreCount
-            : null;
-        final avgIntonation = _intonationCount > 0 ? _intonationTotal / _intonationCount : null;
-        final avgRhythm = _rhythmCount > 0 ? _rhythmTotal / _rhythmCount : null;
-        final avgMfcc = _mfccCount > 0 ? _mfccTotal / _mfccCount : null;
-        final avgVoice = _voiceCount > 0 ? _voiceTotal / _voiceCount : null;
-        final avgStress = _stressCount > 0 ? _stressTotal / _stressCount : null;
-        final avgVowel = _vowelCount > 0 ? _vowelTotal / _vowelCount : null;
-        final avgSyllable = _syllableCount > 0 ? _syllableTotal / _syllableCount : null;
-        final avgSlope = _slopeCount > 0 ? _slopeTotal / _slopeCount : null;
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (_) => ResultScreen(
-              scenario: widget.scenario,
-              totalScore: avgScore,
-              turnCount: _turnIndex,
-              profileScore: avgProfile,
-              intonationScore: avgIntonation,
-              rhythmScore: avgRhythm,
-              mfccScore: avgMfcc,
-              voiceScore: avgVoice,
-              stressScore: avgStress,
-              vowelScore: avgVowel,
-              syllableScore: avgSyllable,
-              slopeScore: avgSlope,
-            ),
-          ),
-        );
-      });
-    }
+    // 턴이 끝날 때마다 저장해서, 중간에 나가도 기록이 남도록 한다.
+    _persistProgress();
+
   }
 
   void _showHint() {
@@ -333,6 +413,7 @@ class _ScenarioScreenState extends State<ScenarioScreen> {
   @override
   Widget build(BuildContext context) {
     final emoji = AppConstants.scenarioEmoji[widget.scenario.id] ?? '?';
+    final isComplete = _turnIndex >= _maxTurns;
 
     return PopScope(
       canPop: false,
@@ -356,6 +437,7 @@ class _ScenarioScreenState extends State<ScenarioScreen> {
           ),
         );
         if (confirmed == true && context.mounted) {
+          await _persistProgress();
           Navigator.pop(context);
         }
       },
@@ -369,6 +451,11 @@ class _ScenarioScreenState extends State<ScenarioScreen> {
           centerTitle: true,
           iconTheme: const IconThemeData(color: Colors.white),
           actions: [
+            IconButton(
+              icon: const Icon(Icons.bar_chart_rounded, color: Colors.white),
+              tooltip: '학습 기록',
+              onPressed: _openProgressScreen,
+            ),
             Container(
               margin: const EdgeInsets.only(right: 12, top: 10, bottom: 10),
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
@@ -468,9 +555,31 @@ class _ScenarioScreenState extends State<ScenarioScreen> {
               child: Column(
                 children: [
                   Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: OutlinedButton.icon(
+                      onPressed: _openProgressScreen,
+                      icon: const Icon(Icons.bar_chart_rounded, size: 18),
+                      label: const Text('학습 기록 보기'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFFFF9500),
+                        side: const BorderSide(color: Color(0xFFFFC107)),
+                        backgroundColor: const Color(0xFFFFF9E6),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 10,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                      ),
+                    ),
+                  ),
+                  Padding(
                     padding: const EdgeInsets.only(bottom: 8),
                     child: Text(
-                      _isRecording
+                      isComplete
+                          ? '마지막 연습 결과를 확인한 뒤 결과를 볼 수 있어요.'
+                          : _isRecording
                           ? '말하고 있어요... 버튼을 눌러서 멈춰요'
                           : '버튼을 눌러서 말해봐요!',
                       style: TextStyle(
@@ -505,11 +614,29 @@ class _ScenarioScreenState extends State<ScenarioScreen> {
                         ),
                       ),
                       const SizedBox(width: 16),
-                      RecordButton(
-                        isRecording: _isRecording,
-                        isLoading: _isLoading,
-                        onTap: _isLoading ? () {} : _toggleRecording,
-                      ),
+                      if (isComplete)
+                        ElevatedButton.icon(
+                          onPressed: _isLoading ? null : _openResultScreen,
+                          icon: const Icon(Icons.check_circle_outline),
+                          label: const Text('결과 보기'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF4CAF50),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 28,
+                              vertical: 18,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                          ),
+                        )
+                      else
+                        RecordButton(
+                          isRecording: _isRecording,
+                          isLoading: _isLoading,
+                          onTap: _isLoading ? () {} : _toggleRecording,
+                        ),
                       const SizedBox(width: 16),
                       GestureDetector(
                         onTap: _replayReferenceAudio,
@@ -558,6 +685,7 @@ class _ChatMessage {
   final String? refAudioUrl;
   final String? ttsUrl;
   final List<WordScore> words;
+  final bool lowSignal;
 
   _ChatMessage({
     required this.text,
@@ -570,6 +698,7 @@ class _ChatMessage {
     this.refAudioUrl,
     this.ttsUrl,
     this.words = const [],
+    this.lowSignal = false,
   });
 }
 
@@ -587,6 +716,13 @@ class _MessageBubbleState extends State<_MessageBubble> {
   bool _showHintRu = false;
   RefPlayer? _player;
   bool _isPlaying = false;
+
+  // 점수가 있으면 점수 구간에 맞춘 격려 문구를, 없으면 백엔드 피드백을 사용한다.
+  String? get _feedbackText {
+    final score = widget.message.score;
+    if (score != null) return scoreEncouragement(score);
+    return widget.message.prosodyFeedback;
+  }
 
   @override
   void dispose() {
@@ -682,6 +818,30 @@ class _MessageBubbleState extends State<_MessageBubble> {
               ],
             ],
           ),
+          if (!isAi && widget.message.lowSignal) ...[
+            const SizedBox(height: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.grey[100],
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.grey.shade300),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.mic_off_outlined, size: 14, color: Colors.grey[600]),
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(
+                      '소리가 약해서 점수를 못 쟀어요. 또렷하게 다시 말해줄래요?',
+                      style: TextStyle(fontSize: 13, color: Colors.grey[700]),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
           if (isAi && widget.message.hint != null)
             Padding(
               padding: const EdgeInsets.only(left: 48, top: 4),
@@ -744,7 +904,9 @@ class _MessageBubbleState extends State<_MessageBubble> {
               ),
             ),
           ],
-          if (!isAi && widget.message.prosodyFeedback != null) ...[
+          // 점수와 '일치하는' 격려 문구만 보여준다 (배지가 낮은데 칭찬하는 모순 방지).
+          // 점수가 없으면(보류/실패) 백엔드 피드백을 그대로 사용.
+          if (!isAi && _feedbackText != null) ...[
             const SizedBox(height: 6),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -764,7 +926,7 @@ class _MessageBubbleState extends State<_MessageBubble> {
                   const SizedBox(width: 6),
                   Flexible(
                     child: Text(
-                      widget.message.prosodyFeedback!,
+                      _feedbackText!,
                       style: TextStyle(
                         fontSize: 13,
                         color: Colors.blue[900],
@@ -837,7 +999,7 @@ class _MessageBubbleState extends State<_MessageBubble> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _NineMetricBreakdown(prosody: widget.message.prosody!),
+                    _MajorMetricBreakdown(prosody: widget.message.prosody!),
                     const SizedBox(height: 12),
                     PitchChart(
                       userPitch: widget.message.prosody!.pitchContour,
@@ -859,25 +1021,19 @@ class _ScoreBadge extends StatelessWidget {
 
   const _ScoreBadge({required this.score});
 
-  Color get _color {
-    if (score >= 80) return Colors.green;
-    if (score >= 60) return Colors.orange;
-    return Colors.red;
-  }
-
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: _color,
+        color: scoreBandColor(score),
         borderRadius: BorderRadius.circular(16),
       ),
       child: Text(
-        '${score.toInt()}',
+        scoreBandLabel(score),
         style: const TextStyle(
           color: Colors.white,
-          fontSize: 14,
+          fontSize: 12,
           fontWeight: FontWeight.bold,
         ),
       ),
@@ -1017,6 +1173,52 @@ class _RhythmDetailRow extends StatelessWidget {
   }
 }
 
+class _MajorMetricBreakdown extends StatelessWidget {
+  final ProsodyResult prosody;
+
+  const _MajorMetricBreakdown({required this.prosody});
+
+  double? get _pronunciationScore {
+    final values = [
+      prosody.profileMfccScore,
+      prosody.profileVoiceScore,
+    ].whereType<double>().toList();
+    if (values.isEmpty) return null;
+    return values.reduce((a, b) => a + b) / values.length;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final items = <MapEntry<String, double>>[
+      if (prosody.profileScore != null) MapEntry('한국어 근접도', prosody.profileScore!),
+      if (prosody.profileIntonationScore != null) MapEntry('억양', prosody.profileIntonationScore!),
+      if (prosody.profileRhythmScore != null) MapEntry('리듬', prosody.profileRhythmScore!),
+      if (_pronunciationScore != null) MapEntry('발음', _pronunciationScore!),
+    ];
+
+    if (items.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          '주요 지표',
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.bold,
+            color: Colors.black54,
+          ),
+        ),
+        const SizedBox(height: 6),
+        ...items.map((entry) => _ScoreBar(label: entry.key, score: entry.value)),
+      ],
+    );
+  }
+}
+
+// ignore: unused_element
 class _NineMetricBreakdown extends StatelessWidget {
   final ProsodyResult prosody;
 
@@ -1129,10 +1331,14 @@ class _ScoreBar extends StatelessWidget {
           ),
           const SizedBox(width: 6),
           SizedBox(
-            width: 32,
+            width: 56,
             child: Text(
-              '${score.toInt()}',
-              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+              scoreBandLabel(score),
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: scoreBandColor(score),
+              ),
               textAlign: TextAlign.right,
             ),
           ),

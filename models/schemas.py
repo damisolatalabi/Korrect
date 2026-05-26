@@ -7,6 +7,8 @@ class WordScore(BaseModel):
     start: float
     end: float
     score: Optional[float] = None
+    formant_f1: Optional[float] = None
+    formant_f2: Optional[float] = None
 
 
 class STTResponse(BaseModel):
@@ -38,6 +40,8 @@ class ProsodyResponse(BaseModel):
     voiced_ratio_score: Optional[float] = None
     pitch_slope_score: Optional[float] = None
     profile_score: Optional[float] = None
+    profile_reliable: Optional[bool] = True
+    profile_reliability_reason: Optional[str] = None
     native_distance: Optional[float] = None
     russian_distance: Optional[float] = None
     profile_features: Optional[dict] = None

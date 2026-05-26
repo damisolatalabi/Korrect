@@ -5,10 +5,30 @@ Supports local Whisper, OpenAI/Groq Whisper APIs, and Google STT.
 import io
 import math
 import os
+import re
 import tempfile
 from pathlib import Path
 
 from config import settings
+
+# 한글 음절/자모 + 공백·숫자·기본 문장부호만 남기고 라틴·키릴 등은 제거.
+_NON_KOREAN = re.compile(r'[^가-힣ㄱ-ㅎㅏ-ㅣ0-9\s.,?!~]')
+_HANGUL = re.compile(r'[가-힣]')
+
+
+def _korean_only(text: str) -> str:
+    """STT 결과를 한국어로 강제: 비한글 문자를 지우고, 한글이 하나도 없으면 빈 값.
+
+    Whisper는 language='ko'로도 드물게 로마자/키릴을 흘릴 수 있고, 그게 음소 진단·
+    화면에 들어가면 깨진다. 한글이 없으면 '못 알아들음'으로 처리하는 게 안전하다.
+    """
+    if not text:
+        return ""
+    cleaned = _NON_KOREAN.sub('', text)
+    cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+    if not _HANGUL.search(cleaned):
+        return ""
+    return cleaned
 
 _local_model = None
 _TOO_QUIET_RMS_THRESHOLD = 8
@@ -32,12 +52,26 @@ def transcribe(audio_bytes: bytes, filename: str = "audio.wav") -> dict:
     """
     mode = settings.whisper_mode
     if mode == "api":
-        return _transcribe_openai_api(audio_bytes, filename)
-    if mode == "google":
-        return _transcribe_google(audio_bytes)
-    if mode == "groq":
-        return _transcribe_groq(audio_bytes, filename)
-    return _transcribe_local(audio_bytes, filename)
+        result = _transcribe_openai_api(audio_bytes, filename)
+    elif mode == "google":
+        result = _transcribe_google(audio_bytes)
+    elif mode == "groq":
+        result = _transcribe_groq(audio_bytes, filename)
+    else:
+        result = _transcribe_local(audio_bytes, filename)
+
+    # 모든 모드 공통: 출력을 한국어로 강제(비한글 제거).
+    raw = result.get("text", "")
+    result["text"] = _korean_only(raw)
+    if raw != result["text"]:
+        print(f"[Whisper] 한글 정제: '{raw}' → '{result['text']}'")
+
+    # 단어 목록도 한글 단어만 유지 (채팅 말풍선이 words를 색깔 단어로 렌더링하므로,
+    # 여기서 안 거르면 text를 비워도 영어 단어가 화면에 그대로 뜬다).
+    words = result.get("words") or []
+    result["words"] = [w for w in words if _HANGUL.search(w.get("word", ""))]
+
+    return result
 
 
 def _real_suffix(audio_bytes: bytes, filename: str) -> str:
@@ -134,11 +168,19 @@ def _transcribe_local(audio_bytes: bytes, filename: str) -> dict:
     tmp_path = _write_normalized_audio(audio_bytes, filename)
     try:
         use_word_ts = os.environ.get("WHISPER_WORD_TIMESTAMPS", "1") == "1"
+        # condition_on_previous_text=False: 짧은 발화에서의 환각(앞 문맥 반복) 완화.
         try:
-            result = model.transcribe(tmp_path, language="ko", word_timestamps=use_word_ts)
+            result = model.transcribe(
+                tmp_path,
+                language="ko",
+                word_timestamps=use_word_ts,
+                condition_on_previous_text=False,
+            )
         except Exception as e:
             print(f"[Whisper] word_timestamps 실패, 재시도: {e}")
-            result = model.transcribe(tmp_path, language="ko")
+            result = model.transcribe(
+                tmp_path, language="ko", condition_on_previous_text=False
+            )
 
         text = result["text"].strip()
         print(f"[Whisper] 인식 결과: '{text}' (language={result.get('language')})")
@@ -231,7 +273,6 @@ def _transcribe_google(audio_bytes: bytes) -> dict:
         sample_rate_hertz=16000,
         language_code="ko-KR",
         enable_automatic_punctuation=True,
-        alternative_language_codes=["ru-RU"],
     )
     response = client.recognize(config=config, audio=audio)
     text = " ".join(

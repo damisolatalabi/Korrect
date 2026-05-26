@@ -4,6 +4,7 @@ import '../models/scenario_model.dart';
 import '../services/api_service.dart';
 import 'scenario_screen.dart';
 import 'progress_screen.dart';
+import 'pronunciation_practice_screen.dart';
 import 'tutorial_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -128,6 +129,8 @@ class _ScenarioList extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          const _PracticeBanner(),
+          const SizedBox(height: 20),
           const Text(
             '어떤 상황을 연습할까요?',
             style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
@@ -143,6 +146,57 @@ class _ScenarioList extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _PracticeBanner extends StatelessWidget {
+  const _PracticeBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: const Color(0xFFFF7043),
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => const PronunciationPracticeScreen(),
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(18),
+          child: Row(
+            children: [
+              const Text('🎯', style: TextStyle(fontSize: 36)),
+              const SizedBox(width: 14),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '발음 콕 집어 연습',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    SizedBox(height: 2),
+                    Text(
+                      '어려운 소리를 골라 반복 연습해요',
+                      style: TextStyle(color: Colors.white, fontSize: 13),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right, color: Colors.white),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -288,21 +342,66 @@ class _ScenarioCardState extends State<_ScenarioCard> {
                     ],
                   ),
                 ),
-                Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.35),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.play_arrow_rounded,
-                    color: Colors.black54,
-                    size: 22,
-                  ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _CardIconButton(
+                      icon: Icons.bar_chart_rounded,
+                      tooltip: '학습 기록',
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const ProgressScreen(),
+                          ),
+                        );
+                      },
+                    ),
+                    const SizedBox(width: 8),
+                    const _CardIconButton(
+                      icon: Icons.play_arrow_rounded,
+                      tooltip: '학습 시작',
+                    ),
+                  ],
                 ),
               ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CardIconButton extends StatelessWidget {
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback? onTap;
+
+  const _CardIconButton({
+    required this.icon,
+    required this.tooltip,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: onTap,
+        customBorder: const CircleBorder(),
+        child: Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.35),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(
+            icon,
+            color: Colors.black54,
+            size: 22,
           ),
         ),
       ),

@@ -4,7 +4,10 @@ import 'package:flutter/material.dart';
 import '../constants.dart';
 import '../models/scenario_model.dart';
 import '../services/progress_service.dart';
+import '../utils/pronunciation_guidance.dart';
+import '../utils/score_band.dart';
 import 'home_screen.dart';
+import 'word_drill_screen.dart';
 
 class ResultScreen extends StatefulWidget {
   final Scenario scenario;
@@ -19,6 +22,7 @@ class ResultScreen extends StatefulWidget {
   final double? vowelScore;
   final double? syllableScore;
   final double? slopeScore;
+  final List<WordRecord> wordRecords;
 
   ResultScreen({
     super.key,
@@ -34,26 +38,21 @@ class ResultScreen extends StatefulWidget {
     this.vowelScore,
     this.syllableScore,
     this.slopeScore,
-  }) {
-    ProgressService.saveSession(
-      SessionRecord(
-        scenarioId: scenario.id,
-        scenarioTitle: scenario.title,
-        totalScore: totalScore,
-        profileScore: profileScore,
-        intonationScore: intonationScore,
-        rhythmScore: rhythmScore,
-        mfccScore: mfccScore,
-        voiceScore: voiceScore,
-        stressScore: stressScore,
-        vowelScore: vowelScore,
-        syllableScore: syllableScore,
-        slopeScore: slopeScore,
-        turnCount: turnCount,
-        date: DateTime.now(),
-      ),
-    );
+    this.wordRecords = const [],
+  });
+
+  double? get _pronunciationScore {
+    final values = [mfccScore, voiceScore].whereType<double>().toList();
+    if (values.isEmpty) return null;
+    return values.reduce((a, b) => a + b) / values.length;
   }
+
+  List<MapEntry<String, double>> get _majorScoreItems => [
+        if (profileScore != null) MapEntry('한국어 근접도', profileScore!),
+        if (intonationScore != null) MapEntry('억양', intonationScore!),
+        if (rhythmScore != null) MapEntry('리듬', rhythmScore!),
+        if (_pronunciationScore != null) MapEntry('발음', _pronunciationScore!),
+      ];
 
   @override
   State<ResultScreen> createState() => _ResultScreenState();
@@ -91,13 +90,8 @@ class _ResultScreenState extends State<ResultScreen> {
     return '괜찮아요. 꾸준히 연습하면 분명히 좋아질 거예요.';
   }
 
-  Color get _scoreColor {
-    if (widget.totalScore == null) return Colors.grey;
-    if (widget.totalScore! >= 80) return Colors.green;
-    if (widget.totalScore! >= 60) return Colors.orange;
-    return Colors.red;
-  }
 
+  // ignore: unused_element
   List<MapEntry<String, double>> get _scoreItems => [
         if (widget.profileScore != null) MapEntry('한국어 근접도', widget.profileScore!),
         if (widget.intonationScore != null) MapEntry('억양', widget.intonationScore!),
@@ -113,6 +107,7 @@ class _ResultScreenState extends State<ResultScreen> {
   @override
   Widget build(BuildContext context) {
     final scenarioEmoji = AppConstants.scenarioEmoji[widget.scenario.id] ?? '🎯';
+    final practiceGuides = buildPracticeGuides(widget.wordRecords);
 
     return Stack(
       children: [
@@ -152,24 +147,18 @@ class _ResultScreenState extends State<ResultScreen> {
                     child: Column(
                       children: [
                         const Text(
-                          '종합 점수',
+                          '종합 수준',
                           style: TextStyle(fontSize: 16, color: Colors.grey),
                         ),
                         const SizedBox(height: 8),
-                        if (widget.totalScore != null)
-                          Text(
-                            '${widget.totalScore!.toInt()}점',
-                            style: TextStyle(
-                              fontSize: 56,
-                              fontWeight: FontWeight.bold,
-                              color: _scoreColor,
-                            ),
-                          )
-                        else
-                          const Text(
-                            '-',
-                            style: TextStyle(fontSize: 56, color: Colors.grey),
+                        Text(
+                          scoreBandLabel(widget.totalScore),
+                          style: TextStyle(
+                            fontSize: 44,
+                            fontWeight: FontWeight.bold,
+                            color: scoreBandColor(widget.totalScore),
                           ),
+                        ),
                         const SizedBox(height: 8),
                         Text(
                           _message,
@@ -178,7 +167,7 @@ class _ResultScreenState extends State<ResultScreen> {
                         ),
                         const SizedBox(height: 16),
                         _StatItem(label: '연습 턴 수', value: '${widget.turnCount}회'),
-                        if (_scoreItems.isNotEmpty) ...[
+                        if (widget._majorScoreItems.isNotEmpty) ...[
                           const SizedBox(height: 20),
                           const Divider(),
                           const SizedBox(height: 12),
@@ -194,8 +183,16 @@ class _ResultScreenState extends State<ResultScreen> {
                             ),
                           ),
                           const SizedBox(height: 10),
-                          ..._scoreItems.map(
+                          ...widget._majorScoreItems.map(
                             (entry) => _ResultScoreBar(label: entry.key, score: entry.value),
+                          ),
+                        ],
+                        if (practiceGuides.isNotEmpty) ...[
+                          const SizedBox(height: 20),
+                          const Divider(),
+                          const SizedBox(height: 12),
+                          _PracticeGuideSection(
+                            guides: practiceGuides,
                           ),
                         ],
                       ],
@@ -271,6 +268,94 @@ class _ResultScreenState extends State<ResultScreen> {
   }
 }
 
+class _PracticeGuideSection extends StatelessWidget {
+  final List<WordPracticeGuide> guides;
+
+  const _PracticeGuideSection({
+    required this.guides,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          '교정 가이드',
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.bold,
+            color: Colors.black54,
+          ),
+        ),
+        const SizedBox(height: 10),
+        ...guides.map((guide) => _PracticeGuideCard(
+              guide: guide,
+            )),
+      ],
+    );
+  }
+}
+
+class _PracticeGuideCard extends StatelessWidget {
+  final WordPracticeGuide guide;
+
+  const _PracticeGuideCard({
+    required this.guide,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final score = guide.score;
+    final scoreText = score == null || score <= 0 ? '인식 불안정' : scoreBandLabel(score);
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF9E6),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFFFC107)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '"${guide.word}" 다시 3번 따라 말하기 ($scoreText)',
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          ...guide.tips.map(
+            (tip) => Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Text(
+                '${tip.title}: ${tip.guide}',
+                style: const TextStyle(fontSize: 12, color: Colors.black87),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => WordDrillScreen(
+                    targetWord: guide.word,
+                  ),
+                ),
+              ),
+              icon: const Icon(Icons.mic_rounded, size: 18),
+              label: const Text('다시 연습'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _StatItem extends StatelessWidget {
   final String label;
   final String value;
@@ -330,11 +415,15 @@ class _ResultScoreBar extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           SizedBox(
-            width: 38,
+            width: 64,
             child: Text(
-              score.toInt().toString(),
+              scoreBandLabel(score),
               textAlign: TextAlign.right,
-              style: const TextStyle(fontWeight: FontWeight.bold),
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 12,
+                color: scoreBandColor(score),
+              ),
             ),
           ),
         ],

@@ -11,6 +11,18 @@ DATA_DIR = Path(__file__).parent.parent / "data" / "scenarios"
 REF_DIR = Path(__file__).parent.parent / "data" / "references"
 
 
+def _score_encouragement(score: float | None) -> str | None:
+    """AI가 점수와 '일치하는' 발음 격려를 하도록, 점수 구간에 맞춘 짧은 문구.
+    (점수는 '연습 필요'인데 AI가 '발음이 정말 좋네요'라고 말하는 모순 방지)"""
+    if score is None:
+        return None
+    if score >= 80:
+        return "발음이 자연스러워요"
+    if score >= 60:
+        return "또박또박 잘 말했어요"
+    return "천천히 또박또박 다시 말하면 더 좋아요"
+
+
 @router.get("")
 async def list_scenarios():
     """사용 가능한 시나리오 목록 반환."""
@@ -49,6 +61,71 @@ async def get_reference_audio(scenario_id: str, turn_index: int):
 async def get_opening(scenario_id: str):
     """시나리오 시작 시 AI 첫 인사말 반환."""
     return gemini_service.get_opening_message(scenario_id)
+
+
+@router.post("/drill/process", response_model=ProcessResponse)
+async def drill_process(audio: UploadFile = File(...)):
+    """
+    발음 드릴 전용 파이프라인: 오디오 → STT(+단어 포먼트) → 발음 점수.
+    회화가 아니므로 AI 대화(Gemini)와 레퍼런스 비교를 생략해 가볍고 빠르다.
+    """
+    audio_bytes = await audio.read()
+    if len(audio_bytes) == 0:
+        raise HTTPException(status_code=400, detail="빈 오디오 파일입니다.")
+
+    stt_result = whisper_service.transcribe(audio_bytes, audio.filename or "audio.wav")
+    word_timestamps = stt_result.get("words", [])
+    word_scores = []
+    if word_timestamps:
+        try:
+            word_scores = prosody_service.score_words(audio_bytes, word_timestamps)
+        except Exception as e:
+            print(f"[drill] 단어별 점수 계산 실패: {e}")
+    stt = STTResponse(
+        text=stt_result["text"],
+        language=stt_result["language"],
+        words=word_scores,
+    )
+
+    prosody = None
+    total_score = None
+    prosody_result = prosody_service.analyze_with_feedback(audio_bytes, None)
+    try:
+        prosody_result.update(prosody_service.analyze_profile_score(audio_bytes))
+    except Exception as e:
+        print(f"[drill] profile score calculation failed: {e}")
+
+    if prosody_result.get("pitch_contour"):
+        prosody = ProsodyResponse(
+            pitch_contour=prosody_result["pitch_contour"],
+            ref_pitch_contour=prosody_result.get("ref_pitch_contour") or [],
+            score=prosody_result.get("score") or 0.0,
+            dtw_distance=prosody_result.get("dtw_distance") or 0.0,
+            rhythm_score=prosody_result.get("rhythm_score"),
+            stress_score=prosody_result.get("stress_score"),
+            mfcc_cosine_score=prosody_result.get("mfcc_cosine_score"),
+            profile_score=prosody_result.get("profile_score"),
+            profile_reliable=prosody_result.get("profile_reliable", True),
+            profile_reliability_reason=prosody_result.get("profile_reliability_reason"),
+            profile_intonation_score=prosody_result.get("profile_intonation_score"),
+            profile_rhythm_score=prosody_result.get("profile_rhythm_score"),
+            profile_voice_score=prosody_result.get("profile_voice_score"),
+            profile_mfcc_score=prosody_result.get("profile_mfcc_score"),
+            profile_stress_score=prosody_result.get("profile_stress_score"),
+            profile_vowel_score=prosody_result.get("profile_vowel_score"),
+            profile_syllable_score=prosody_result.get("profile_syllable_score"),
+            profile_slope_score=prosody_result.get("profile_slope_score"),
+        )
+        if prosody_result.get("profile_score") is not None:
+            total_score = prosody_result.get("profile_score")
+
+    return ProcessResponse(
+        stt=stt,
+        prosody=prosody,
+        chat=ChatResponse(reply=""),
+        total_score=total_score,
+        prosody_feedback=None,
+    )
 
 
 @router.post("/{scenario_id}/process", response_model=ProcessResponse)
@@ -125,6 +202,8 @@ async def process_turn(
             voiced_ratio_score=prosody_result.get("voiced_ratio_score"),
             pitch_slope_score=prosody_result.get("pitch_slope_score"),
             profile_score=prosody_result.get("profile_score"),
+            profile_reliable=prosody_result.get("profile_reliable", True),
+            profile_reliability_reason=prosody_result.get("profile_reliability_reason"),
             native_distance=prosody_result.get("native_distance"),
             russian_distance=prosody_result.get("russian_distance"),
             profile_features=prosody_result.get("profile_features"),
@@ -155,12 +234,16 @@ async def process_turn(
             history_data = json.loads(history)
         except json.JSONDecodeError:
             raise HTTPException(status_code=400, detail="history 필드가 유효한 JSON이 아닙니다.")
-        chat_result = gemini_service.chat(
-            scenario=scenario_id,
-            user_text=stt.text,
-            history=history_data,
-            prosody_feedback=feedback_text,
-        )
+        try:
+            chat_result = gemini_service.chat(
+                scenario=scenario_id,
+                user_text=stt.text,
+                history=history_data,
+                prosody_feedback=_score_encouragement(total_score) or feedback_text,
+            )
+        except Exception as e:
+            print(f"[scenario] Gemini unavailable, using fallback response: {e}")
+            chat_result = gemini_service.fallback_chat(scenario_id, turn_index)
         chat = ChatResponse(**chat_result)
 
     return ProcessResponse(

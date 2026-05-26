@@ -4,6 +4,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     openai_api_key: str = ""
     gemini_api_key: str = ""
+    gemini_model: str = "gemini-2.5-flash"
     groq_api_key: str = ""
 
     # STT 모드: "local" | "api" (OpenAI) | "google" | "groq"
