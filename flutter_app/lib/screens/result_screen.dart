@@ -1,40 +1,58 @@
 import 'package:confetti/confetti.dart';
 import 'package:flutter/material.dart';
+
 import '../constants.dart';
 import '../models/scenario_model.dart';
 import '../services/progress_service.dart';
+import '../utils/pronunciation_guidance.dart';
+import '../utils/score_band.dart';
 import 'home_screen.dart';
+import 'word_drill_screen.dart';
 
 class ResultScreen extends StatefulWidget {
   final Scenario scenario;
   final double? totalScore;
   final int turnCount;
+  final double? profileScore;
+  final double? intonationScore;
   final double? rhythmScore;
-  final double? stressScore;
   final double? mfccScore;
+  final double? voiceScore;
+  final double? stressScore;
+  final double? vowelScore;
+  final double? syllableScore;
+  final double? slopeScore;
+  final List<WordRecord> wordRecords;
 
   ResultScreen({
     super.key,
     required this.scenario,
     required this.totalScore,
     required this.turnCount,
+    this.profileScore,
+    this.intonationScore,
     this.rhythmScore,
-    this.stressScore,
     this.mfccScore,
-  }) {
-    ProgressService.saveSession(
-      SessionRecord(
-        scenarioId: scenario.id,
-        scenarioTitle: scenario.title,
-        totalScore: totalScore,
-        rhythmScore: rhythmScore,
-        stressScore: stressScore,
-        mfccScore: mfccScore,
-        turnCount: turnCount,
-        date: DateTime.now(),
-      ),
-    );
+    this.voiceScore,
+    this.stressScore,
+    this.vowelScore,
+    this.syllableScore,
+    this.slopeScore,
+    this.wordRecords = const [],
+  });
+
+  double? get _pronunciationScore {
+    final values = [mfccScore, voiceScore].whereType<double>().toList();
+    if (values.isEmpty) return null;
+    return values.reduce((a, b) => a + b) / values.length;
   }
+
+  List<MapEntry<String, double>> get _majorScoreItems => [
+        if (profileScore != null) MapEntry('한국어 근접도', profileScore!),
+        if (intonationScore != null) MapEntry('억양', intonationScore!),
+        if (rhythmScore != null) MapEntry('리듬', rhythmScore!),
+        if (_pronunciationScore != null) MapEntry('발음', _pronunciationScore!),
+      ];
 
   @override
   State<ResultScreen> createState() => _ResultScreenState();
@@ -46,10 +64,7 @@ class _ResultScreenState extends State<ResultScreen> {
   @override
   void initState() {
     super.initState();
-    _confettiController = ConfettiController(
-      duration: const Duration(seconds: 3),
-    );
-
+    _confettiController = ConfettiController(duration: const Duration(seconds: 3));
     if (widget.totalScore != null && widget.totalScore! >= 80) {
       _confettiController.play();
     }
@@ -62,34 +77,37 @@ class _ResultScreenState extends State<ResultScreen> {
   }
 
   String get _emoji {
-    if (widget.totalScore == null) return ':)';
-    if (widget.totalScore! >= 80) return '***';
-    if (widget.totalScore! >= 60) return '++';
-    return '^^';
+    if (widget.totalScore == null) return '🙂';
+    if (widget.totalScore! >= 80) return '🎉';
+    if (widget.totalScore! >= 60) return '👍';
+    return '💪';
   }
 
   String get _message {
-    if (widget.totalScore == null) return '오늘도 열심히 연습했어요!';
-    if (widget.totalScore! >= 80) return '완벽해요! 정말 잘했어요!';
-    if (widget.totalScore! >= 60) return '잘하고 있어요! 조금 더 연습해봐요!';
-    return '괜찮아요! 계속 연습하면 잘 할 수 있어요!';
+    if (widget.totalScore == null) return '오늘도 한 걸음 더 연습했어요.';
+    if (widget.totalScore! >= 80) return '훌륭해요! 한국어 발화가 많이 자연스러워졌어요.';
+    if (widget.totalScore! >= 60) return '좋아요. 조금만 더 다듬으면 더 자연스러워질 거예요.';
+    return '괜찮아요. 꾸준히 연습하면 분명히 좋아질 거예요.';
   }
 
-  Color get _scoreColor {
-    if (widget.totalScore == null) return Colors.grey;
-    if (widget.totalScore! >= 80) return Colors.green;
-    if (widget.totalScore! >= 60) return Colors.orange;
-    return Colors.red;
-  }
 
-  bool get _hasSubScores =>
-      widget.rhythmScore != null &&
-      widget.stressScore != null &&
-      widget.mfccScore != null;
+  // ignore: unused_element
+  List<MapEntry<String, double>> get _scoreItems => [
+        if (widget.profileScore != null) MapEntry('한국어 근접도', widget.profileScore!),
+        if (widget.intonationScore != null) MapEntry('억양', widget.intonationScore!),
+        if (widget.rhythmScore != null) MapEntry('리듬', widget.rhythmScore!),
+        if (widget.mfccScore != null) MapEntry('음색', widget.mfccScore!),
+        if (widget.voiceScore != null) MapEntry('발성', widget.voiceScore!),
+        if (widget.stressScore != null) MapEntry('강세', widget.stressScore!),
+        if (widget.vowelScore != null) MapEntry('모음', widget.vowelScore!),
+        if (widget.syllableScore != null) MapEntry('음절', widget.syllableScore!),
+        if (widget.slopeScore != null) MapEntry('기울기', widget.slopeScore!),
+      ];
 
   @override
   Widget build(BuildContext context) {
-    final scenarioEmoji = AppConstants.scenarioEmoji[widget.scenario.id] ?? '?';
+    final scenarioEmoji = AppConstants.scenarioEmoji[widget.scenario.id] ?? '🎯';
+    final practiceGuides = buildPracticeGuides(widget.wordRecords);
 
     return Stack(
       children: [
@@ -97,20 +115,19 @@ class _ResultScreenState extends State<ResultScreen> {
           backgroundColor: const Color(AppConstants.bgColor),
           body: SafeArea(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24.0),
+              padding: const EdgeInsets.all(24),
               child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   const SizedBox(height: 24),
                   Text(_emoji, style: const TextStyle(fontSize: 40)),
                   const SizedBox(height: 16),
                   const Text(
-                    '연습 완료!',
+                    '학습 완료!',
                     style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    '$scenarioEmoji ${widget.scenario.title} 대화 연습',
+                    '$scenarioEmoji ${widget.scenario.title} 연습',
                     style: TextStyle(fontSize: 16, color: Colors.grey[600]),
                   ),
                   const SizedBox(height: 32),
@@ -130,24 +147,18 @@ class _ResultScreenState extends State<ResultScreen> {
                     child: Column(
                       children: [
                         const Text(
-                          '억양 점수',
+                          '종합 수준',
                           style: TextStyle(fontSize: 16, color: Colors.grey),
                         ),
                         const SizedBox(height: 8),
-                        if (widget.totalScore != null)
-                          Text(
-                            '${widget.totalScore!.toInt()}점',
-                            style: TextStyle(
-                              fontSize: 56,
-                              fontWeight: FontWeight.bold,
-                              color: _scoreColor,
-                            ),
-                          )
-                        else
-                          const Text(
-                            '-',
-                            style: TextStyle(fontSize: 56, color: Colors.grey),
+                        Text(
+                          scoreBandLabel(widget.totalScore),
+                          style: TextStyle(
+                            fontSize: 44,
+                            fontWeight: FontWeight.bold,
+                            color: scoreBandColor(widget.totalScore),
                           ),
+                        ),
                         const SizedBox(height: 8),
                         Text(
                           _message,
@@ -155,23 +166,15 @@ class _ResultScreenState extends State<ResultScreen> {
                           textAlign: TextAlign.center,
                         ),
                         const SizedBox(height: 16),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            _StatItem(
-                              label: '대화 횟수',
-                              value: '${widget.turnCount}번',
-                            ),
-                          ],
-                        ),
-                        if (_hasSubScores) ...[
+                        _StatItem(label: '연습 턴 수', value: '${widget.turnCount}회'),
+                        if (widget._majorScoreItems.isNotEmpty) ...[
                           const SizedBox(height: 20),
                           const Divider(),
                           const SizedBox(height: 12),
                           const Align(
                             alignment: Alignment.centerLeft,
                             child: Text(
-                              '세부 점수 (턴 평균)',
+                              '세부 점수 평균',
                               style: TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.bold,
@@ -180,11 +183,17 @@ class _ResultScreenState extends State<ResultScreen> {
                             ),
                           ),
                           const SizedBox(height: 10),
-                          if (widget.totalScore != null)
-                            _ResultScoreBar(label: '억양', score: widget.totalScore!),
-                          _ResultScoreBar(label: '리듬', score: widget.rhythmScore!),
-                          _ResultScoreBar(label: '강세', score: widget.stressScore!),
-                          _ResultScoreBar(label: '음색', score: widget.mfccScore!),
+                          ...widget._majorScoreItems.map(
+                            (entry) => _ResultScoreBar(label: entry.key, score: entry.value),
+                          ),
+                        ],
+                        if (practiceGuides.isNotEmpty) ...[
+                          const SizedBox(height: 20),
+                          const Divider(),
+                          const SizedBox(height: 12),
+                          _PracticeGuideSection(
+                            guides: practiceGuides,
+                          ),
                         ],
                       ],
                     ),
@@ -259,6 +268,94 @@ class _ResultScreenState extends State<ResultScreen> {
   }
 }
 
+class _PracticeGuideSection extends StatelessWidget {
+  final List<WordPracticeGuide> guides;
+
+  const _PracticeGuideSection({
+    required this.guides,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          '교정 가이드',
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.bold,
+            color: Colors.black54,
+          ),
+        ),
+        const SizedBox(height: 10),
+        ...guides.map((guide) => _PracticeGuideCard(
+              guide: guide,
+            )),
+      ],
+    );
+  }
+}
+
+class _PracticeGuideCard extends StatelessWidget {
+  final WordPracticeGuide guide;
+
+  const _PracticeGuideCard({
+    required this.guide,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final score = guide.score;
+    final scoreText = score == null || score <= 0 ? '인식 불안정' : scoreBandLabel(score);
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF9E6),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFFFC107)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '"${guide.word}" 다시 3번 따라 말하기 ($scoreText)',
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          ...guide.tips.map(
+            (tip) => Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Text(
+                '${tip.title}: ${tip.guide}',
+                style: const TextStyle(fontSize: 12, color: Colors.black87),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => WordDrillScreen(
+                    targetWord: guide.word,
+                  ),
+                ),
+              ),
+              icon: const Icon(Icons.mic_rounded, size: 18),
+              label: const Text('다시 연습'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _StatItem extends StatelessWidget {
   final String label;
   final String value;
@@ -298,7 +395,7 @@ class _ResultScoreBar extends StatelessWidget {
       child: Row(
         children: [
           SizedBox(
-            width: 56,
+            width: 72,
             child: Text(
               label,
               style: const TextStyle(fontSize: 13, color: Colors.black54),
@@ -318,11 +415,15 @@ class _ResultScoreBar extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           SizedBox(
-            width: 52,
+            width: 64,
             child: Text(
-              '${score.toInt()}점',
-              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+              scoreBandLabel(score),
               textAlign: TextAlign.right,
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 12,
+                color: scoreBandColor(score),
+              ),
             ),
           ),
         ],

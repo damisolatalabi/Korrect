@@ -3,6 +3,7 @@ Damisola 담당 - 운율 분석 서비스
 librosa(+Praat/parselmouth) 기반 피치 · 리듬 · 강세 · 음색(MFCC)을 추출하고
 DTW / Cosine 유사도로 원어민 대비 점수를 산출한다.
 """
+import json
 import os
 import tempfile
 from pathlib import Path
@@ -14,6 +15,10 @@ from scipy.spatial.distance import euclidean, cosine
 # ── 러시아 억양 프로필 로드 ────────────────────────────────────────────
 _RUSSIAN_PROFILE_PATH = Path(__file__).parent.parent / "data" / "russian_accent_profile.npy"
 _russian_profile: np.ndarray | None = None
+_NATIVE_SPEECH_PROFILE_PATH = Path(__file__).parent.parent / "data" / "native_profile.json"
+_RUSSIAN_SPEECH_PROFILE_PATH = Path(__file__).parent.parent / "data" / "russian_profile.json"
+_native_speech_profile: dict | None = None
+_russian_speech_profile: dict | None = None
 
 def _get_russian_profile() -> np.ndarray | None:
     global _russian_profile
@@ -34,6 +39,28 @@ HOP_LENGTH = 512
 FMIN = 75    # Hz - 사람 목소리 최소 주파수
 FMAX = 400   # Hz - 사람 목소리 최대 주파수
 N_MFCC = 13
+
+# Profile scoring is conservative because app recordings vary by device,
+# distance, and room noise. Minimum spreads and capped distances keep one
+# unstable feature from dominating the final score.
+PROFILE_DISTANCE_CAP = 3.0
+PROFILE_STD_FLOORS = {
+    "pitch_mean": 20.0,
+    "pitch_std": 12.0,
+    "pitch_range": 45.0,
+    "speech_rate": 2.0,
+    "pause_count": 1.5,
+    "pause_total_duration": 0.5,
+    "voiced_ratio": 0.10,
+    "energy_mean": 0.06,
+    "energy_std": 0.04,
+    "pitch_slope": 0.75,
+    "syllable_count": 12.0,
+    # 포먼트는 추출기/시간축 정상화 후 원어민 std가 F1~75, F2~82 수준이라
+    # 옛 floor(350/500)는 거리를 0으로 눌러버린다. 실제 std보다 약간 낮게 설정.
+    "formant_f1_mean": 50.0,
+    "formant_f2_mean": 60.0,
+}
 
 # 러시아어 억양 감지 임계값
 KOREAN_MIN_PITCH_VARIANCE = 500.0
@@ -158,24 +185,55 @@ def _normalize_voiced(arr: np.ndarray) -> np.ndarray:
     return result
 
 
-def extract_formants(audio_bytes: bytes) -> tuple[np.ndarray, np.ndarray]:
-    """Praat 기반 F1/F2 포먼트 추출. Praat 미설치 시 빈 배열 반환."""
+def extract_formant_track(audio_bytes: bytes) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Praat 기반 프레임별 (times, F1, F2) 트랙. Praat 미설치 시 빈 배열."""
     if not PRAAT_AVAILABLE:
-        return np.array([]), np.array([])
+        return np.array([]), np.array([]), np.array([])
     tmp_path = _with_tempfile(audio_bytes)
     try:
         sound = parselmouth.Sound(tmp_path)
+        # Praat 표준 설정: 0~5500Hz에서 5개 포먼트를 추정한 뒤 앞의 2개(F1/F2)만 사용.
+        # max_number_of_formants=2로 두면 두 극이 전 대역으로 밀려 F1/F2가 비정상적으로
+        # 높게(예: F1~2900, F2~4300) 나오므로 반드시 5로 둔다.
         formant = sound.to_formant_burg(
             time_step=HOP_LENGTH / 16000,
-            max_number_of_formants=2,
+            max_number_of_formants=5,
             maximum_formant=5500,
         )
-        times = formant.xs()
-        f1 = np.array([formant.get_value_at_time(1, t) for t in times])
-        f2 = np.array([formant.get_value_at_time(2, t) for t in times])
-        return np.nan_to_num(f1, nan=0.0), np.nan_to_num(f2, nan=0.0)
+        # formant.xs()가 시간축을 제대로 안 주는 경우가 있어 프레임 번호 → 시간으로 재구성.
+        n = formant.get_number_of_frames()
+        times = np.array([formant.get_time_from_frame_number(i + 1) for i in range(n)])
+        f1 = np.nan_to_num(np.array([formant.get_value_at_time(1, t) for t in times]), nan=0.0)
+        f2 = np.nan_to_num(np.array([formant.get_value_at_time(2, t) for t in times]), nan=0.0)
+        return times, f1, f2
     except Exception:
-        return np.array([]), np.array([])
+        return np.array([]), np.array([]), np.array([])
+    finally:
+        os.unlink(tmp_path)
+
+
+def extract_formants(audio_bytes: bytes) -> tuple[np.ndarray, np.ndarray]:
+    """F1/F2 프레임 배열만 반환 (시간축 제외)."""
+    _, f1, f2 = extract_formant_track(audio_bytes)
+    return f1, f2
+
+
+def extract_hnr_mean(audio_bytes: bytes) -> float | None:
+    """평균 HNR(배음대잡음비, dB). 유성 음성은 높고(>5) 소음은 낮음(<0).
+    신호가 진짜 '말소리'인지 판단하는 데 사용. Praat 미설치 시 None."""
+    if not PRAAT_AVAILABLE:
+        return None
+    tmp_path = _with_tempfile(audio_bytes)
+    try:
+        sound = parselmouth.Sound(tmp_path)
+        harmonicity = sound.to_harmonicity()
+        vals = np.asarray(harmonicity.values).ravel()
+        vals = vals[vals > -100]  # -200 = Praat '정의 안 됨' 프레임 제외
+        if not len(vals):
+            return None
+        return round(float(np.mean(vals)), 2)
+    except Exception:
+        return None
     finally:
         os.unlink(tmp_path)
 
@@ -315,6 +373,235 @@ def extract_mfcc(audio_bytes: bytes) -> np.ndarray:
         os.unlink(tmp_path)
 
 
+def _get_speech_profiles() -> tuple[dict | None, dict | None]:
+    global _native_speech_profile, _russian_speech_profile
+    if _native_speech_profile is None and _NATIVE_SPEECH_PROFILE_PATH.exists():
+        with open(_NATIVE_SPEECH_PROFILE_PATH, encoding="utf-8") as f:
+            _native_speech_profile = json.load(f)
+    if _russian_speech_profile is None and _RUSSIAN_SPEECH_PROFILE_PATH.exists():
+        with open(_RUSSIAN_SPEECH_PROFILE_PATH, encoding="utf-8") as f:
+            _russian_speech_profile = json.load(f)
+    return _native_speech_profile, _russian_speech_profile
+
+
+def _voiced_ratio(pitch: np.ndarray) -> float | None:
+    voiced_idx = np.where(pitch > 0)[0]
+    if len(voiced_idx) == 0:
+        return None
+    segment = pitch[voiced_idx[0]: voiced_idx[-1] + 1]
+    if len(segment) == 0:
+        return None
+    return round(float(np.sum(segment > 0) / len(segment)), 4)
+
+
+def extract_profile_features(audio_bytes: bytes) -> dict:
+    pitch = extract_pitch(audio_bytes)
+    voiced = pitch[pitch > 0]
+    rate_info = extract_speech_rate(audio_bytes)
+    pause_info = extract_pause_pattern(audio_bytes)
+    energy = extract_energy(audio_bytes)
+    mfcc = extract_mfcc(audio_bytes)
+    formant_f1, formant_f2 = extract_formants(audio_bytes)
+    voiced_f1 = formant_f1[formant_f1 > 0] if len(formant_f1) else np.array([])
+    voiced_f2 = formant_f2[formant_f2 > 0] if len(formant_f2) else np.array([])
+
+    pitch_slope = None
+    if len(voiced) >= 5:
+        target = 50
+        x = np.linspace(0, 1, len(voiced))
+        y = np.interp(np.linspace(0, 1, target), x, voiced)
+        pitch_slope = round(float(np.polyfit(np.arange(target), y, 1)[0]), 4)
+
+    return {
+        "mfcc_mean": [round(float(v), 6) for v in mfcc.tolist()] if len(mfcc) else [],
+        "pitch_mean": round(float(np.mean(voiced)), 4) if len(voiced) else None,
+        "pitch_std": round(float(np.std(voiced)), 4) if len(voiced) else None,
+        "pitch_range": round(float(np.max(voiced) - np.min(voiced)), 4) if len(voiced) else None,
+        "speech_rate": float(rate_info["rate"]) if rate_info.get("rate") is not None else None,
+        "pause_count": int(pause_info.get("pause_count", 0)),
+        "pause_total_duration": float(pause_info.get("total_pause_duration", 0.0)),
+        "voiced_ratio": _voiced_ratio(pitch),
+        # 전체 구간 기준 유성 프레임 비율 (신뢰성 판단용; voiced_ratio는 유성 구간 내부 비율이라 별도).
+        "voiced_frame_ratio": round(float(np.mean(pitch > 0)), 4) if len(pitch) else None,
+        "hnr_mean": extract_hnr_mean(audio_bytes),  # 신뢰성 판단용 (소음 검출)
+        "energy_mean": round(float(np.mean(energy)), 4) if len(energy) else None,
+        "energy_std": round(float(np.std(energy)), 4) if len(energy) else None,
+        "pitch_slope": pitch_slope,
+        "syllable_count": int(rate_info.get("syllable_count", 0)),
+        "formant_f1_mean": round(float(np.mean(voiced_f1)), 4) if len(voiced_f1) else None,
+        "formant_f2_mean": round(float(np.mean(voiced_f2)), 4) if len(voiced_f2) else None,
+    }
+
+
+def _scalar_profile_distance(value: float | None, profile: dict, name: str) -> float | None:
+    if value is None:
+        return None
+    mean = profile.get(f"{name}_mean")
+    std = profile.get(f"{name}_std")
+    if mean is None:
+        return None
+    denom = float(std or 0.0)
+    denom = max(denom, PROFILE_STD_FLOORS.get(name, 0.0))
+    if denom < 1e-6:
+        denom = max(abs(float(mean)), 1.0)
+    return min(abs(float(value) - float(mean)) / denom, PROFILE_DISTANCE_CAP)
+
+
+def _vector_profile_distance(features: dict, profile: dict, name: str) -> float | None:
+    user_vec = np.array(features.get(name) or [], dtype=float)
+    profile_vec = np.array(profile.get(name) or [], dtype=float)
+    if not len(user_vec) or len(user_vec) != len(profile_vec):
+        return None
+    return float(cosine(user_vec, profile_vec))
+
+
+def _profile_distance(features: dict, profile: dict) -> tuple[float | None, dict]:
+    # mfcc(음색)는 원어민도 낮게 나오고 소음/녹음환경에 흔들려 비중을 낮춤.
+    # speech_rate(템포)는 같은 발화에서도 ±10% 속도로 점수를 크게 흔들어 비중을 낮춤.
+    weights = {
+        "mfcc_mean": 0.10,
+        "pitch_std": 0.20,
+        "pitch_range": 0.15,
+        "speech_rate": 0.10,
+        "pause_count": 0.15,
+        "voiced_ratio": 0.20,
+    }
+    parts: dict[str, float] = {}
+
+    parts["mfcc_mean"] = _vector_profile_distance(features, profile, "mfcc_mean")
+
+    for name in ("pitch_std", "pitch_range", "speech_rate", "pause_count", "voiced_ratio"):
+        parts[name] = _scalar_profile_distance(features.get(name), profile, name)
+
+    valid = {name: value for name, value in parts.items() if value is not None}
+    if not valid:
+        return None, {}
+    total_weight = sum(weights[name] for name in valid)
+    weighted = sum(valid[name] * weights[name] for name in valid) / total_weight
+    return round(float(weighted), 4), {k: round(float(v), 4) for k, v in valid.items()}
+
+
+def _two_axis_score(native_distance: float | None, russian_distance: float | None) -> float | None:
+    if native_distance is None or russian_distance is None:
+        return None
+    total = native_distance + russian_distance
+    if total <= 1e-9:
+        return 50.0
+    return round(max(0.0, min(100.0, (russian_distance / total) * 100.0)), 1)
+
+
+def _korean_proximity_score(native_distance: float | None, russian_distance: float | None) -> float | None:
+    if native_distance is None or russian_distance is None:
+        return None
+
+    axis_score = _two_axis_score(native_distance, russian_distance)
+    native_score = _native_axis_score(native_distance, max_distance=3.0)
+    if axis_score is None or native_score is None:
+        return axis_score or native_score
+
+    if russian_distance <= native_distance:
+        return axis_score
+
+    # Overall Korean proximity should reward both direction and absolute closeness.
+    # Short utterances can be close to both profiles, so pure two-axis scoring is too harsh.
+    score = (axis_score * 0.55) + (native_score * 0.45)
+    score += min(6.0, (russian_distance - native_distance) * 10.0)
+    return round(max(0.0, min(100.0, score)), 1)
+
+
+def _native_axis_score(distance: float | None, max_distance: float = 4.0) -> float | None:
+    if distance is None:
+        return None
+    if distance < 0:
+        return 0.0
+    return round(max(0.0, min(100.0, 100.0 - (distance / max_distance) * 100.0)), 1)
+
+
+def _feature_group_distance(features: dict, profile: dict, names: tuple[str, ...]) -> float | None:
+    distances = []
+    for name in names:
+        distance = _scalar_profile_distance(features.get(name), profile, name)
+        if distance is not None:
+            distances.append(distance)
+    if not distances:
+        return None
+    return round(float(sum(distances) / len(distances)), 4)
+
+
+def _profile_subscores(features: dict, native_profile: dict, russian_profile: dict) -> dict:
+    native_mfcc_distance = _vector_profile_distance(features, native_profile, "mfcc_mean")
+    russian_mfcc_distance = _vector_profile_distance(features, russian_profile, "mfcc_mean")
+
+    intonation_native = _feature_group_distance(features, native_profile, ("pitch_std", "pitch_range"))
+    intonation_russian = _feature_group_distance(features, russian_profile, ("pitch_std", "pitch_range"))
+    rhythm_native = _feature_group_distance(features, native_profile, ("speech_rate", "pause_count"))
+    rhythm_russian = _feature_group_distance(features, russian_profile, ("speech_rate", "pause_count"))
+    voice_native = _scalar_profile_distance(features.get("voiced_ratio"), native_profile, "voiced_ratio")
+    voice_russian = _scalar_profile_distance(features.get("voiced_ratio"), russian_profile, "voiced_ratio")
+    stress_native = _feature_group_distance(features, native_profile, ("energy_mean", "energy_std"))
+    vowel_native = _feature_group_distance(features, native_profile, ("formant_f1_mean", "formant_f2_mean"))
+    syllable_native = _feature_group_distance(features, native_profile, ("syllable_count",))
+    slope_native = _feature_group_distance(features, native_profile, ("pitch_slope",))
+
+    return {
+        "profile_intonation_score": _two_axis_score(intonation_native, intonation_russian),
+        "profile_rhythm_score": _two_axis_score(rhythm_native, rhythm_russian),
+        "profile_voice_score": _two_axis_score(voice_native, voice_russian),
+        # 음색(mfcc)은 원어민도 40~60점대로 깎이고 소음에 흔들려 사용자에게 보여주지 않는다.
+        # (헤드라인 점수에는 낮은 가중치로만 남겨둠.)
+        "profile_mfcc_score": None,
+        "profile_stress_score": _native_axis_score(stress_native),
+        "profile_vowel_score": _native_axis_score(vowel_native),
+        "profile_syllable_score": _native_axis_score(syllable_native),
+        "profile_slope_score": _native_axis_score(slope_native),
+    }
+
+
+def _assess_profile_reliability(features: dict) -> tuple[bool, str | None]:
+    """녹음 신호가 점수를 줄 만큼 또렷한지 판단. 아니면 점수를 보류(abstain)한다.
+
+    - voiced_ratio가 낮으면 소음/무음이 많아 운율·포먼트가 믿을 수 없음
+    - 음절이 거의 안 잡히면 발화가 너무 짧음
+    """
+    voiced = features.get("voiced_frame_ratio")
+    syllables = features.get("syllable_count", 0) or 0
+    hnr = features.get("hnr_mean")
+    # HNR이 낮으면 배음 구조가 약함 = 말소리가 아니라 소음/잡음
+    if hnr is not None and hnr < 2.0:
+        return False, "audio_unclear"
+    if voiced is None or voiced < 0.35:
+        return False, "audio_unclear"
+    if syllables < 1:
+        return False, "too_short"
+    return True, None
+
+
+def analyze_profile_score(audio_bytes: bytes) -> dict:
+    native_profile, russian_profile = _get_speech_profiles()
+    if native_profile is None or russian_profile is None:
+        return {}
+
+    features = extract_profile_features(audio_bytes)
+    reliable, reason = _assess_profile_reliability(features)
+    native_distance, native_parts = _profile_distance(features, native_profile)
+    russian_distance, russian_parts = _profile_distance(features, russian_profile)
+    subscores = _profile_subscores(features, native_profile, russian_profile)
+
+    return {
+        "profile_score": _korean_proximity_score(native_distance, russian_distance),
+        "profile_reliable": reliable,
+        "profile_reliability_reason": reason,
+        "native_distance": native_distance,
+        "russian_distance": russian_distance,
+        "profile_features": features,
+        **subscores,
+        "profile_distance_parts": {
+            "native": native_parts,
+            "russian": russian_parts,
+        },
+    }
+
+
 # ── 러시아어 억양 감지 (기존) ─────────────────────────────────────────
 def detect_russian_accent(pitch: np.ndarray) -> dict:
     voiced = pitch[pitch > 0]
@@ -450,6 +737,9 @@ def score_words(audio_bytes: bytes, words: list[dict]) -> list[dict]:
     if len(pitch) == 0:
         return [{"word": w["word"], "start": w["start"], "end": w["end"], "score": None} for w in words]
 
+    # 단어 구간별 포먼트(F1/F2) 평균을 위해 시간축 포함 트랙을 한 번만 추출.
+    f_times, f1_track, f2_track = extract_formant_track(audio_bytes)
+
     frames_per_sec = 16000 / HOP_LENGTH  # librosa.load(sr=None) → wav가 16kHz면 31.25
     results = []
     for w in words:
@@ -462,11 +752,27 @@ def score_words(audio_bytes: bytes, words: list[dict]) -> list[dict]:
         else:
             variance = float(np.var(voiced))
             score = round(min(100.0, max(0.0, variance / 5.0)), 1)
+
+        # 이 단어 시간 구간 안의 유성 프레임 포먼트만 평균 → 진짜 '단어별' F1/F2.
+        f1_mean = f2_mean = None
+        if len(f_times):
+            mask = (f_times >= w["start"]) & (f_times <= w["end"])
+            wf1 = f1_track[mask]
+            wf2 = f2_track[mask]
+            wf1 = wf1[wf1 > 0]
+            wf2 = wf2[wf2 > 0]
+            if len(wf1):
+                f1_mean = round(float(np.mean(wf1)), 1)
+            if len(wf2):
+                f2_mean = round(float(np.mean(wf2)), 1)
+
         results.append({
             "word": w["word"],
             "start": round(w["start"], 3),
             "end": round(w["end"], 3),
             "score": score,
+            "formant_f1": f1_mean,
+            "formant_f2": f2_mean,
         })
     return results
 

@@ -16,9 +16,13 @@ async def chat(request: ChatRequest):
     if not request.user_text.strip():
         raise HTTPException(status_code=400, detail="발화 텍스트가 비어있습니다.")
 
-    result = gemini_service.chat(
-        scenario=request.scenario,
-        user_text=request.user_text,
-        history=request.history,
-    )
+    try:
+        result = gemini_service.chat(
+            scenario=request.scenario,
+            user_text=request.user_text,
+            history=request.history,
+        )
+    except Exception as e:
+        print(f"[chat] Gemini unavailable, using fallback response: {e}")
+        result = gemini_service.fallback_chat(request.scenario)
     return ChatResponse(**result)

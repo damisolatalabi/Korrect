@@ -3,8 +3,17 @@ class WordScore {
   final double start;
   final double end;
   final double? score;
+  final double? formantF1;
+  final double? formantF2;
 
-  WordScore({required this.word, required this.start, required this.end, this.score});
+  WordScore({
+    required this.word,
+    required this.start,
+    required this.end,
+    this.score,
+    this.formantF1,
+    this.formantF2,
+  });
 
   factory WordScore.fromJson(Map<String, dynamic> json) {
     return WordScore(
@@ -12,6 +21,10 @@ class WordScore {
       start: (json['start'] as num).toDouble(),
       end: (json['end'] as num).toDouble(),
       score: json['score'] != null ? (json['score'] as num).toDouble() : null,
+      formantF1:
+          json['formant_f1'] != null ? (json['formant_f1'] as num).toDouble() : null,
+      formantF2:
+          json['formant_f2'] != null ? (json['formant_f2'] as num).toDouble() : null,
     );
   }
 }
@@ -56,6 +69,20 @@ class ProsodyResult {
   final int? syllableCountRef;
   final double? voicedRatioScore;
   final double? pitchSlopeScore;
+  final double? profileScore;
+  final bool reliable;
+  final String? reliabilityReason;
+  final double? nativeDistance;
+  final double? russianDistance;
+  final Map<String, dynamic>? profileFeatures;
+  final double? profileIntonationScore;
+  final double? profileRhythmScore;
+  final double? profileVoiceScore;
+  final double? profileMfccScore;
+  final double? profileStressScore;
+  final double? profileVowelScore;
+  final double? profileSyllableScore;
+  final double? profileSlopeScore;
 
   ProsodyResult({
     required this.pitchContour,
@@ -78,6 +105,20 @@ class ProsodyResult {
     this.syllableCountRef,
     this.voicedRatioScore,
     this.pitchSlopeScore,
+    this.profileScore,
+    this.reliable = true,
+    this.reliabilityReason,
+    this.nativeDistance,
+    this.russianDistance,
+    this.profileFeatures,
+    this.profileIntonationScore,
+    this.profileRhythmScore,
+    this.profileVoiceScore,
+    this.profileMfccScore,
+    this.profileStressScore,
+    this.profileVowelScore,
+    this.profileSyllableScore,
+    this.profileSlopeScore,
   });
 
   factory ProsodyResult.fromJson(Map<String, dynamic> json) {
@@ -127,6 +168,42 @@ class ProsodyResult {
           : null,
       pitchSlopeScore: json['pitch_slope_score'] != null
           ? (json['pitch_slope_score'] as num).toDouble()
+          : null,
+      profileScore: json['profile_score'] != null
+          ? (json['profile_score'] as num).toDouble()
+          : null,
+      reliable: json['profile_reliable'] as bool? ?? true,
+      reliabilityReason: json['profile_reliability_reason'] as String?,
+      nativeDistance: json['native_distance'] != null
+          ? (json['native_distance'] as num).toDouble()
+          : null,
+      russianDistance: json['russian_distance'] != null
+          ? (json['russian_distance'] as num).toDouble()
+          : null,
+      profileFeatures: json['profile_features'] as Map<String, dynamic>?,
+      profileIntonationScore: json['profile_intonation_score'] != null
+          ? (json['profile_intonation_score'] as num).toDouble()
+          : null,
+      profileRhythmScore: json['profile_rhythm_score'] != null
+          ? (json['profile_rhythm_score'] as num).toDouble()
+          : null,
+      profileVoiceScore: json['profile_voice_score'] != null
+          ? (json['profile_voice_score'] as num).toDouble()
+          : null,
+      profileMfccScore: json['profile_mfcc_score'] != null
+          ? (json['profile_mfcc_score'] as num).toDouble()
+          : null,
+      profileStressScore: json['profile_stress_score'] != null
+          ? (json['profile_stress_score'] as num).toDouble()
+          : null,
+      profileVowelScore: json['profile_vowel_score'] != null
+          ? (json['profile_vowel_score'] as num).toDouble()
+          : null,
+      profileSyllableScore: json['profile_syllable_score'] != null
+          ? (json['profile_syllable_score'] as num).toDouble()
+          : null,
+      profileSlopeScore: json['profile_slope_score'] != null
+          ? (json['profile_slope_score'] as num).toDouble()
           : null,
     );
   }

@@ -221,7 +221,7 @@ def chat(scenario: str, user_text: str, history: list[dict], prosody_feedback: s
     system_prompt = SYSTEM_PROMPTS.get(scenario, DEFAULT_SYSTEM_PROMPT)
 
     model = genai.GenerativeModel(
-        model_name="gemini-2.5-flash-lite",
+        model_name=settings.gemini_model,
         system_instruction=system_prompt,
     )
 
@@ -287,3 +287,70 @@ def get_opening_message(scenario: str) -> dict:
         "hint": None,
         "hint_ru": None,
     }
+
+
+FALLBACK_CHAT = {
+    "hospital": [
+        {
+            "reply": "좋아요. 어디가 아픈지 말해볼까요? 😊\n\n**힌트:** 머리가 아파요.\n**подсказка:** У меня болит голова.",
+            "hint": "머리가 아파요.",
+            "hint_ru": "У меня болит голова.",
+        },
+        {
+            "reply": "잘했어요. 언제부터 아팠는지도 말해볼까요? 😊\n\n**힌트:** 어제부터 아팠어요.\n**подсказка:** Болит со вчерашнего дня.",
+            "hint": "어제부터 아팠어요.",
+            "hint_ru": "Болит со вчерашнего дня.",
+        },
+    ],
+    "bank": [
+        {
+            "reply": "좋아요. 어떤 업무를 하고 싶은지 말해볼까요? 😊\n\n**힌트:** 돈을 바꾸고 싶어요.\n**подсказка:** Я хочу обменять деньги.",
+            "hint": "돈을 바꾸고 싶어요.",
+            "hint_ru": "Я хочу обменять деньги.",
+        },
+        {
+            "reply": "잘했어요. 얼마를 바꿀지도 말해볼까요? 😊\n\n**힌트:** 이 돈을 원화로 바꿔 주세요.\n**подсказка:** Обменяйте это на воны.",
+            "hint": "이 돈을 원화로 바꿔 주세요.",
+            "hint_ru": "Обменяйте это на воны.",
+        },
+    ],
+    "immigration": [
+        {
+            "reply": "좋아요. 방문 목적을 말해볼까요? 😊\n\n**힌트:** 비자를 연장하고 싶어요.\n**подсказка:** Я хочу продлить визу.",
+            "hint": "비자를 연장하고 싶어요.",
+            "hint_ru": "Я хочу продлить визу.",
+        },
+        {
+            "reply": "잘했어요. 필요한 서류가 있는지도 물어볼까요? 😊\n\n**힌트:** 어떤 서류가 필요해요?\n**подсказка:** Какие документы нужны?",
+            "hint": "어떤 서류가 필요해요?",
+            "hint_ru": "Какие документы нужны?",
+        },
+    ],
+    "school": [
+        {
+            "reply": "좋아요. 자기소개를 이어서 말해볼까요? 😊\n\n**힌트:** 제 이름은 민준이에요.\n**подсказка:** Меня зовут Минджун.",
+            "hint": "제 이름은 민준이에요.",
+            "hint_ru": "Меня зовут Минджун.",
+        },
+    ],
+    "restaurant": [
+        {
+            "reply": "좋아요. 주문하고 싶은 음식을 말해볼까요? 😊\n\n**힌트:** 비빔밥 하나 주세요.\n**подсказка:** Один пибимпап, пожалуйста.",
+            "hint": "비빔밥 하나 주세요.",
+            "hint_ru": "Один пибимпап, пожалуйста.",
+        },
+    ],
+    "mart": [
+        {
+            "reply": "좋아요. 찾는 물건을 말해볼까요? 😊\n\n**힌트:** 우유 어디에 있어요?\n**подсказка:** Где находится молоко?",
+            "hint": "우유 어디에 있어요?",
+            "hint_ru": "Где находится молоко?",
+        },
+    ],
+}
+
+
+def fallback_chat(scenario: str, turn_index: int = 0) -> dict:
+    """Return a local response when Gemini is unavailable or quota-limited."""
+    options = FALLBACK_CHAT.get(scenario) or FALLBACK_CHAT["hospital"]
+    return options[turn_index % len(options)]
