@@ -82,11 +82,11 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
         flexibleSpace: Container(
-          decoration: BoxDecoration(
+          decoration: const BoxDecoration(
             gradient: LinearGradient(
               colors: [
-                const Color(0xFFFF9500), // Orange
-                const Color(0xFFFFC107), // Yellow
+                Color(0xFFFF9500), // Orange
+                Color(0xFFFFC107), // Yellow
               ],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,

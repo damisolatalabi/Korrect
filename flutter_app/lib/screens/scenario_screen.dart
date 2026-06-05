@@ -316,11 +316,11 @@ class _ScenarioScreenState extends State<ScenarioScreen> {
             const SizedBox(width: 12),
           ],
           flexibleSpace: Container(
-            decoration: BoxDecoration(
+            decoration: const BoxDecoration(
               gradient: LinearGradient(
                 colors: [
-                  const Color(0xFFFF9500),
-                  const Color(0xFFFFC107),
+                  Color(0xFFFF9500),
+                  Color(0xFFFFC107),
                 ],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
@@ -358,17 +358,17 @@ class _ScenarioScreenState extends State<ScenarioScreen> {
               ),
             Container(
               padding: const EdgeInsets.symmetric(vertical: 20),
-              decoration: BoxDecoration(
+              decoration: const BoxDecoration(
                 color: Colors.white,
-                borderRadius: const BorderRadius.only(
+                borderRadius: BorderRadius.only(
                   topLeft: Radius.circular(24),
                   topRight: Radius.circular(24),
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: const Color(0xFFE8E0C8),
+                    color: Color(0xFFE8E0C8),
                     blurRadius: 0,
-                    offset: const Offset(0, -3),
+                    offset: Offset(0, -3),
                   ),
                 ],
               ),
