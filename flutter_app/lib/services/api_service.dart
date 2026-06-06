@@ -70,7 +70,7 @@ class ApiService {
     request.fields['turn_index'] = turnIndex.toString();
 
     final streamedResponse = await request.send()
-        .timeout(const Duration(seconds: 30));
+        .timeout(const Duration(seconds: 90));
     final response = await http.Response.fromStream(streamedResponse);
 
     if (response.statusCode == 200) {
@@ -79,5 +79,40 @@ class ApiService {
       );
     }
     throw Exception('처리 실패 (${response.statusCode}): ${response.body}');
+  }
+
+  /// 발음 드릴 전용: STT + 발음 점수만 (AI 대화·레퍼런스 생략).
+  static Future<ProcessResult> analyzeDrill({
+    required RecordedAudio audio,
+  }) async {
+    final request = http.MultipartRequest(
+      'POST',
+      Uri.parse('${AppConstants.baseUrl}/api/scenario/drill/process'),
+    );
+
+    if (audio.bytes != null) {
+      request.files.add(http.MultipartFile.fromBytes(
+        'audio',
+        audio.bytes!,
+        filename: audio.filename,
+      ));
+    } else if (audio.file != null) {
+      request.files.add(await http.MultipartFile.fromPath(
+        'audio',
+        audio.file!.path,
+        filename: audio.filename,
+      ));
+    }
+
+    final streamedResponse =
+        await request.send().timeout(const Duration(seconds: 60));
+    final response = await http.Response.fromStream(streamedResponse);
+
+    if (response.statusCode == 200) {
+      return ProcessResult.fromJson(
+        jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>,
+      );
+    }
+    throw Exception('드릴 분석 실패 (${response.statusCode}): ${response.body}');
   }
 }

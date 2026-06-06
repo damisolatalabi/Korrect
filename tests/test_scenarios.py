@@ -13,7 +13,7 @@ from main import app
 
 client = TestClient(app)
 
-SCENARIOS = ["hospital", "bank", "immigration"]
+SCENARIOS = ["hospital", "bank", "immigration", "school", "restaurant", "mart"]
 DATA_DIR = Path(__file__).parent.parent / "data" / "scenarios"
 
 

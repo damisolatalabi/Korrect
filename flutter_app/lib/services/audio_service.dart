@@ -30,15 +30,19 @@ class AudioService {
       path = '';
     } else {
       final dir = await getTemporaryDirectory();
-      path = '${dir.path}/korrect_recording.m4a';
+      path = '${dir.path}/korrect_recording.wav';
     }
 
     await _getRecorder().start(
       const RecordConfig(
-        encoder: AudioEncoder.aacLc,
+        encoder: AudioEncoder.wav,
         sampleRate: 16000,
         numChannels: 1,
-        bitRate: 128000,
+        androidConfig: AndroidRecordConfig(
+          useLegacy: true,
+          manageBluetooth: false,
+          audioSource: AndroidAudioSource.mic,
+        ),
       ),
       path: path,
     );
@@ -56,7 +60,7 @@ class AudioService {
 
     final file = File(path);
     if (!await file.exists()) return null;
-    return RecordedAudio(file: file, filename: 'audio.m4a');
+    return RecordedAudio(file: file, filename: 'audio.wav');
   }
 
   static Future<bool> isRecording() async {

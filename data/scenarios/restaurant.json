@@ -1,0 +1,35 @@
+{
+  "id": "restaurant",
+  "title": "식당",
+  "description": "식당에서 음식을 주문하는 연습",
+  "turns": [
+    {
+      "index": 0,
+      "speaker": "ai",
+      "text": "어서 오세요! 무엇을 주문하시겠어요?",
+      "expected_user_reply": "비빔밥 하나 주세요.",
+      "hint": "비빔밥 하나 주세요."
+    },
+    {
+      "index": 1,
+      "speaker": "ai",
+      "text": "맵게 해드릴까요?",
+      "expected_user_reply": "안 맵게 해주세요.",
+      "hint": "안 맵게 해주세요."
+    },
+    {
+      "index": 2,
+      "speaker": "ai",
+      "text": "음료수도 드릴까요?",
+      "expected_user_reply": "물 한 잔 주세요.",
+      "hint": "물 한 잔 주세요."
+    },
+    {
+      "index": 3,
+      "speaker": "ai",
+      "text": "모두 8천 원입니다.",
+      "expected_user_reply": "여기 있어요.",
+      "hint": "여기 있어요."
+    }
+  ]
+}

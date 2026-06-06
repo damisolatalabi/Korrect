@@ -1,5 +1,5 @@
 name: korrect_app
-description: 고려인 아동 한국어 말하기 학습 앱
+description: 고려인을 위한 한국어 말하기 학습 앱
 
 publish_to: 'none'
 version: 1.0.0+1
@@ -18,7 +18,7 @@ dependencies:
   cupertino_icons: ^1.0.6
   audioplayers: ^6.0.0
   shared_preferences: ^2.5.5
-  confetti: ^0.8.0   # <-- ADDED THIS LINE
+  confetti: ^0.8.0
 
 dev_dependencies:
   flutter_test:

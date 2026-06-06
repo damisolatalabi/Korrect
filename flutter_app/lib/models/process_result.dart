@@ -1,13 +1,49 @@
+class WordScore {
+  final String word;
+  final double start;
+  final double end;
+  final double? score;
+  final double? formantF1;
+  final double? formantF2;
+
+  WordScore({
+    required this.word,
+    required this.start,
+    required this.end,
+    this.score,
+    this.formantF1,
+    this.formantF2,
+  });
+
+  factory WordScore.fromJson(Map<String, dynamic> json) {
+    return WordScore(
+      word: json['word'] as String,
+      start: (json['start'] as num).toDouble(),
+      end: (json['end'] as num).toDouble(),
+      score: json['score'] != null ? (json['score'] as num).toDouble() : null,
+      formantF1:
+          json['formant_f1'] != null ? (json['formant_f1'] as num).toDouble() : null,
+      formantF2:
+          json['formant_f2'] != null ? (json['formant_f2'] as num).toDouble() : null,
+    );
+  }
+}
+
 class STTResult {
   final String text;
   final String language;
+  final List<WordScore> words;
 
-  STTResult({required this.text, required this.language});
+  STTResult({required this.text, required this.language, this.words = const []});
 
   factory STTResult.fromJson(Map<String, dynamic> json) {
+    final wordsRaw = json['words'] as List?;
     return STTResult(
       text: json['text'] as String,
       language: json['language'] as String,
+      words: wordsRaw == null
+          ? const []
+          : wordsRaw.map((e) => WordScore.fromJson(e as Map<String, dynamic>)).toList(),
     );
   }
 }
@@ -22,6 +58,31 @@ class ProsodyResult {
   final double? mfccCosineScore;
   final double? compositeScore;
   final double? accentScore;
+  final double? speechRateUser;
+  final double? speechRateRef;
+  final int? pauseCountUser;
+  final int? pauseCountRef;
+  final String? rhythmFeedback;
+  final double? formantScore;
+  final double? syllableScore;
+  final int? syllableCountUser;
+  final int? syllableCountRef;
+  final double? voicedRatioScore;
+  final double? pitchSlopeScore;
+  final double? profileScore;
+  final bool reliable;
+  final String? reliabilityReason;
+  final double? nativeDistance;
+  final double? russianDistance;
+  final Map<String, dynamic>? profileFeatures;
+  final double? profileIntonationScore;
+  final double? profileRhythmScore;
+  final double? profileVoiceScore;
+  final double? profileMfccScore;
+  final double? profileStressScore;
+  final double? profileVowelScore;
+  final double? profileSyllableScore;
+  final double? profileSlopeScore;
 
   ProsodyResult({
     required this.pitchContour,
@@ -33,6 +94,31 @@ class ProsodyResult {
     this.mfccCosineScore,
     this.compositeScore,
     this.accentScore,
+    this.speechRateUser,
+    this.speechRateRef,
+    this.pauseCountUser,
+    this.pauseCountRef,
+    this.rhythmFeedback,
+    this.formantScore,
+    this.syllableScore,
+    this.syllableCountUser,
+    this.syllableCountRef,
+    this.voicedRatioScore,
+    this.pitchSlopeScore,
+    this.profileScore,
+    this.reliable = true,
+    this.reliabilityReason,
+    this.nativeDistance,
+    this.russianDistance,
+    this.profileFeatures,
+    this.profileIntonationScore,
+    this.profileRhythmScore,
+    this.profileVoiceScore,
+    this.profileMfccScore,
+    this.profileStressScore,
+    this.profileVowelScore,
+    this.profileSyllableScore,
+    this.profileSlopeScore,
   });
 
   factory ProsodyResult.fromJson(Map<String, dynamic> json) {
@@ -60,6 +146,65 @@ class ProsodyResult {
       accentScore: json['accent_score'] != null
           ? (json['accent_score'] as num).toDouble()
           : null,
+      speechRateUser: json['speech_rate_user'] != null
+          ? (json['speech_rate_user'] as num).toDouble()
+          : null,
+      speechRateRef: json['speech_rate_ref'] != null
+          ? (json['speech_rate_ref'] as num).toDouble()
+          : null,
+      pauseCountUser: json['pause_count_user'] as int?,
+      pauseCountRef: json['pause_count_ref'] as int?,
+      rhythmFeedback: json['rhythm_feedback'] as String?,
+      formantScore: json['formant_score'] != null
+          ? (json['formant_score'] as num).toDouble()
+          : null,
+      syllableScore: json['syllable_score'] != null
+          ? (json['syllable_score'] as num).toDouble()
+          : null,
+      syllableCountUser: json['syllable_count_user'] as int?,
+      syllableCountRef: json['syllable_count_ref'] as int?,
+      voicedRatioScore: json['voiced_ratio_score'] != null
+          ? (json['voiced_ratio_score'] as num).toDouble()
+          : null,
+      pitchSlopeScore: json['pitch_slope_score'] != null
+          ? (json['pitch_slope_score'] as num).toDouble()
+          : null,
+      profileScore: json['profile_score'] != null
+          ? (json['profile_score'] as num).toDouble()
+          : null,
+      reliable: json['profile_reliable'] as bool? ?? true,
+      reliabilityReason: json['profile_reliability_reason'] as String?,
+      nativeDistance: json['native_distance'] != null
+          ? (json['native_distance'] as num).toDouble()
+          : null,
+      russianDistance: json['russian_distance'] != null
+          ? (json['russian_distance'] as num).toDouble()
+          : null,
+      profileFeatures: json['profile_features'] as Map<String, dynamic>?,
+      profileIntonationScore: json['profile_intonation_score'] != null
+          ? (json['profile_intonation_score'] as num).toDouble()
+          : null,
+      profileRhythmScore: json['profile_rhythm_score'] != null
+          ? (json['profile_rhythm_score'] as num).toDouble()
+          : null,
+      profileVoiceScore: json['profile_voice_score'] != null
+          ? (json['profile_voice_score'] as num).toDouble()
+          : null,
+      profileMfccScore: json['profile_mfcc_score'] != null
+          ? (json['profile_mfcc_score'] as num).toDouble()
+          : null,
+      profileStressScore: json['profile_stress_score'] != null
+          ? (json['profile_stress_score'] as num).toDouble()
+          : null,
+      profileVowelScore: json['profile_vowel_score'] != null
+          ? (json['profile_vowel_score'] as num).toDouble()
+          : null,
+      profileSyllableScore: json['profile_syllable_score'] != null
+          ? (json['profile_syllable_score'] as num).toDouble()
+          : null,
+      profileSlopeScore: json['profile_slope_score'] != null
+          ? (json['profile_slope_score'] as num).toDouble()
+          : null,
     );
   }
 }
@@ -67,13 +212,15 @@ class ProsodyResult {
 class ChatResult {
   final String reply;
   final String? hint;
+  final String? hintRu;
 
-  ChatResult({required this.reply, this.hint});
+  ChatResult({required this.reply, this.hint, this.hintRu});
 
   factory ChatResult.fromJson(Map<String, dynamic> json) {
     return ChatResult(
       reply: json['reply'] as String,
       hint: json['hint'] as String?,
+      hintRu: json['hint_ru'] as String?,
     );
   }
 }

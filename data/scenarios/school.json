@@ -1,0 +1,35 @@
+{
+  "id": "school",
+  "title": "학교",
+  "description": "학교에서 자기소개하고 친구와 인사하는 연습",
+  "turns": [
+    {
+      "index": 0,
+      "speaker": "ai",
+      "text": "안녕하세요! 이름이 뭐예요?",
+      "expected_user_reply": "제 이름은 민준이에요.",
+      "hint": "제 이름은 민준이에요."
+    },
+    {
+      "index": 1,
+      "speaker": "ai",
+      "text": "어느 나라에서 왔어요?",
+      "expected_user_reply": "저는 카자흐스탄에서 왔어요.",
+      "hint": "저는 카자흐스탄에서 왔어요."
+    },
+    {
+      "index": 2,
+      "speaker": "ai",
+      "text": "무슨 과목을 좋아해요?",
+      "expected_user_reply": "저는 수학을 좋아해요.",
+      "hint": "저는 수학을 좋아해요."
+    },
+    {
+      "index": 3,
+      "speaker": "ai",
+      "text": "친구 이름이 뭐예요?",
+      "expected_user_reply": "제 친구 이름은 지우예요.",
+      "hint": "제 친구 이름은 지우예요."
+    }
+  ]
+}

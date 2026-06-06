@@ -62,6 +62,16 @@ class TestSTTBasic:
         assert isinstance(result["text"], str)
 
 
+    def test_silence_short_circuits_to_empty_text(self):
+        """사실상 무음인 입력은 빈 텍스트로 처리한다."""
+        from services.whisper_service import transcribe
+
+        audio = _make_silence_wav(duration_sec=2.0)
+        result = transcribe(audio)
+        assert result["text"] == ""
+        assert result["language"] == "ko"
+
+
 class TestSTTErrorCases:
     """STT 오류 케이스 (이태경 3주차 수집 케이스)."""
 

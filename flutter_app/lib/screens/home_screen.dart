@@ -5,6 +5,8 @@ import '../services/api_service.dart';
 import 'scenario_screen.dart';
 import 'progress_screen.dart';
 import 'vocab_prep_screen.dart';
+import 'pronunciation_practice_screen.dart';
+import 'tutorial_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -27,11 +29,13 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _loadScenarios() async {
     try {
       final scenarios = await ApiService.getScenarios();
+      if (!mounted) return;
       setState(() {
         _scenarios = scenarios;
         _isLoading = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _error = '서버에 연결할 수 없어요.\n서버가 켜져 있는지 확인해주세요.';
         _isLoading = false;
@@ -42,17 +46,17 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFFFF9E6), // Warm page background
+      backgroundColor: const Color(0xFFFFF9E6),
       appBar: AppBar(
         title: Container(
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(999),
             border: Border.all(
-              color: Colors.white.withOpacity(0.5),
+              color: Colors.white.withValues(alpha: 0.5),
               width: 2.5,
             ),
-            color: Colors.white.withOpacity(0.18),
+            color: Colors.white.withValues(alpha: 0.18),
           ),
           child: const Text(
             'Korrect',
@@ -73,6 +77,16 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         centerTitle: true,
         actions: [
+          IconButton(
+            icon: const Icon(Icons.help_outline, color: Colors.white),
+            tooltip: '사용법',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const TutorialScreen(isFirstLaunch: false),
+              ),
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.bar_chart, color: Colors.white),
             tooltip: '내 기록',
@@ -116,6 +130,8 @@ class _ScenarioList extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          const _PracticeBanner(),
+          const SizedBox(height: 20),
           const Text(
             '어떤 상황을 연습할까요?',
             style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
@@ -131,6 +147,57 @@ class _ScenarioList extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _PracticeBanner extends StatelessWidget {
+  const _PracticeBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: const Color(0xFFFF7043),
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => const PronunciationPracticeScreen(),
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(18),
+          child: Row(
+            children: [
+              const Text('🎯', style: TextStyle(fontSize: 36)),
+              const SizedBox(width: 14),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '발음 콕 집어 연습',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    SizedBox(height: 2),
+                    Text(
+                      '어려운 소리를 골라 반복 연습해요',
+                      style: TextStyle(color: Colors.white, fontSize: 13),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right, color: Colors.white),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -181,7 +248,13 @@ class _ScenarioCardState extends State<_ScenarioCard> {
       case 'bank':
         return '환전해요';
       case 'immigration':
-        return '체류 신청해요';
+        return '체류를 신청해요';
+      case 'school':
+        return '학교 생활을 연습해요';
+      case 'restaurant':
+        return '주문하고 요청해요';
+      case 'mart':
+        return '물건을 찾고 계산해요';
       default:
         return widget.scenario.description;
     }
@@ -189,6 +262,7 @@ class _ScenarioCardState extends State<_ScenarioCard> {
 
   @override
   Widget build(BuildContext context) {
+    final emoji = AppConstants.scenarioEmoji[widget.scenario.id] ?? '💬';
     final cardColor = _getCardColor(widget.scenario.id);
     final shadowColor = _getShadowColor(widget.scenario.id);
     final shortDescription = _getShortDescription(widget.scenario.id);
@@ -224,8 +298,8 @@ class _ScenarioCardState extends State<_ScenarioCard> {
               ),
             );
           },
-          splashColor: Colors.white.withOpacity(0.4),
-          highlightColor: Colors.white.withOpacity(0.2),
+          splashColor: Colors.white.withValues(alpha: 0.35),
+          highlightColor: Colors.white.withValues(alpha: 0.2),
           child: Padding(
             padding: const EdgeInsets.all(20.0),
             child: Row(
@@ -240,7 +314,6 @@ class _ScenarioCardState extends State<_ScenarioCard> {
                   style: const TextStyle(fontSize: 44),
                 ),
                 const SizedBox(width: 16),
-                // Text content
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -266,22 +339,66 @@ class _ScenarioCardState extends State<_ScenarioCard> {
                     ],
                   ),
                 ),
-                // Play button in circular container
-                Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.35),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.play_arrow_rounded,
-                    color: Colors.black54,
-                    size: 22,
-                  ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _CardIconButton(
+                      icon: Icons.bar_chart_rounded,
+                      tooltip: '학습 기록',
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const ProgressScreen(),
+                          ),
+                        );
+                      },
+                    ),
+                    const SizedBox(width: 8),
+                    const _CardIconButton(
+                      icon: Icons.play_arrow_rounded,
+                      tooltip: '학습 시작',
+                    ),
+                  ],
                 ),
               ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CardIconButton extends StatelessWidget {
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback? onTap;
+
+  const _CardIconButton({
+    required this.icon,
+    required this.tooltip,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: onTap,
+        customBorder: const CircleBorder(),
+        child: Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.35),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(
+            icon,
+            color: Colors.black54,
+            size: 22,
           ),
         ),
       ),
@@ -299,15 +416,17 @@ class _ErrorView extends StatelessWidget {
   Widget build(BuildContext context) {
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(24.0),
+        padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             const Icon(Icons.wifi_off, size: 64, color: Colors.grey),
             const SizedBox(height: 16),
-            Text(message,
-                textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 16)),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 16),
+            ),
             const SizedBox(height: 24),
             ElevatedButton(
               onPressed: onRetry,

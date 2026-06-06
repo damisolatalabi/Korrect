@@ -18,8 +18,8 @@ class RecordButton extends StatefulWidget {
 
 class _RecordButtonState extends State<RecordButton>
     with SingleTickerProviderStateMixin {
-  late AnimationController _pulseController;
-  late Animation<double> _pulseAnimation;
+  late final AnimationController _pulseController;
+  late final Animation<double> _pulseAnimation;
 
   @override
   void initState() {
@@ -27,14 +27,28 @@ class _RecordButtonState extends State<RecordButton>
     _pulseController = AnimationController(
       duration: const Duration(milliseconds: 1000),
       vsync: this,
-    )..repeat(reverse: true);
-    
+    );
     _pulseAnimation = Tween<double>(begin: 1.0, end: 1.3).animate(
       CurvedAnimation(
         parent: _pulseController,
         curve: Curves.easeInOut,
       ),
     );
+
+    if (widget.isRecording) {
+      _pulseController.repeat(reverse: true);
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant RecordButton oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isRecording && !_pulseController.isAnimating) {
+      _pulseController.repeat(reverse: true);
+    } else if (!widget.isRecording && _pulseController.isAnimating) {
+      _pulseController.stop();
+      _pulseController.reset();
+    }
   }
 
   @override
@@ -65,18 +79,17 @@ class _RecordButtonState extends State<RecordButton>
         animation: _pulseController,
         builder: (context, child) {
           final isRecordingActive = widget.isRecording;
-          
+
           return Stack(
             alignment: Alignment.center,
             children: [
-              // Pulse rings (only when recording)
               if (isRecordingActive) ...[
                 Container(
                   width: 100 * _pulseAnimation.value,
                   height: 100 * _pulseAnimation.value,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: Colors.red.withOpacity(0.2),
+                    color: Colors.red.withValues(alpha: 0.2),
                   ),
                 ),
                 Container(
@@ -84,23 +97,21 @@ class _RecordButtonState extends State<RecordButton>
                   height: 100 * (_pulseAnimation.value * 1.15),
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: Colors.red.withOpacity(0.1),
+                    color: Colors.red.withValues(alpha: 0.1),
                   ),
                 ),
               ],
-              // Main button
               AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
                 width: 100,
                 height: 100,
                 decoration: BoxDecoration(
-                  // Green when idle, Red when recording
                   color: isRecordingActive ? Colors.red : const Color(0xFF4CAF50),
                   shape: BoxShape.circle,
                   boxShadow: [
                     BoxShadow(
                       color: (isRecordingActive ? Colors.red : const Color(0xFF4CAF50))
-                          .withOpacity(0.4),
+                          .withValues(alpha: 0.4),
                       blurRadius: isRecordingActive ? 20 : 10,
                       spreadRadius: isRecordingActive ? 5 : 2,
                     ),

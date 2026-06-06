@@ -1,21 +1,21 @@
-import 'dart:html' as html;
+import 'package:audioplayers/audioplayers.dart';
 
 class RefPlayer {
-  html.AudioElement? _audio;
+  final AudioPlayer _player = AudioPlayer();
+
+  Stream<Duration> get positionStream => _player.onPositionChanged;
+  Stream<Duration> get durationStream => _player.onDurationChanged;
+  Stream<void> get onComplete => _player.onPlayerComplete;
 
   Future<void> play(String url) async {
-    _audio?.pause();
-    _audio = html.AudioElement(url);
-    _audio!.play();
+    await _player.play(UrlSource(url));
   }
 
   Future<void> stop() async {
-    _audio?.pause();
-    _audio = null;
+    await _player.stop();
   }
 
   void dispose() {
-    _audio?.pause();
-    _audio = null;
+    _player.dispose();
   }
 }

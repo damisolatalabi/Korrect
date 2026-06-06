@@ -1,21 +1,21 @@
 import 'package:audioplayers/audioplayers.dart';
 
 class RefPlayer {
-  AudioPlayer? _player;
+  final AudioPlayer _player = AudioPlayer();
+
+  Stream<Duration> get positionStream => _player.onPositionChanged;
+  Stream<Duration> get durationStream => _player.onDurationChanged;
+  Stream<void> get onComplete => _player.onPlayerComplete;
 
   Future<void> play(String url) async {
-    if (_player == null) {
-      _player = AudioPlayer();
-    }
-    await _player!.play(UrlSource(url));
+    await _player.play(UrlSource(url));
   }
 
   Future<void> stop() async {
-    await _player?.stop();
+    await _player.stop();
   }
 
   void dispose() {
-    _player?.dispose();
-    _player = null;
+    _player.dispose();
   }
 }

@@ -39,3 +39,10 @@ Thumbs.db
 
 # Claude Code
 .claude/
+
+# md files 나중에 삭제해야함
+*.md
+
+services/*.py
+tests/test_stt.py
+flutter_app/macos/

@@ -1,12 +1,19 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'screens/home_screen.dart';
+import 'screens/tutorial_screen.dart';
 
-void main() {
-  runApp(const KorrectApp());
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  final prefs = await SharedPreferences.getInstance();
+  final tutorialDone = prefs.getBool('korrect_tutorial_done') ?? false;
+  runApp(KorrectApp(showTutorial: !tutorialDone));
 }
 
 class KorrectApp extends StatelessWidget {
-  const KorrectApp({super.key});
+  final bool showTutorial;
+
+  const KorrectApp({super.key, required this.showTutorial});
 
   @override
   Widget build(BuildContext context) {
@@ -18,7 +25,7 @@ class KorrectApp extends StatelessWidget {
         ),
         useMaterial3: true,
       ),
-      home: const HomeScreen(),
+      home: showTutorial ? const TutorialScreen() : const HomeScreen(),
       debugShowCheckedModeBanner: false,
     );
   }

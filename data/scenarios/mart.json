@@ -1,0 +1,35 @@
+{
+  "id": "mart",
+  "title": "마트",
+  "description": "마트에서 물건을 찾고 계산하는 연습",
+  "turns": [
+    {
+      "index": 0,
+      "speaker": "ai",
+      "text": "안녕하세요! 무엇을 찾으세요?",
+      "expected_user_reply": "우유 어디에 있어요?",
+      "hint": "우유 어디에 있어요?"
+    },
+    {
+      "index": 1,
+      "speaker": "ai",
+      "text": "우유는 저쪽 냉장고에 있어요.",
+      "expected_user_reply": "감사합니다.",
+      "hint": "감사합니다."
+    },
+    {
+      "index": 2,
+      "speaker": "ai",
+      "text": "또 필요한 거 있어요?",
+      "expected_user_reply": "사과도 주세요.",
+      "hint": "사과도 주세요."
+    },
+    {
+      "index": 3,
+      "speaker": "ai",
+      "text": "전부 5천 원이에요.",
+      "expected_user_reply": "카드로 계산할게요.",
+      "hint": "카드로 계산할게요."
+    }
+  ]
+}
