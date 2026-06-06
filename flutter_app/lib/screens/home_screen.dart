@@ -4,6 +4,7 @@ import '../models/scenario_model.dart';
 import '../services/api_service.dart';
 import 'scenario_screen.dart';
 import 'progress_screen.dart';
+import 'vocab_prep_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -150,11 +151,11 @@ class _ScenarioCardState extends State<_ScenarioCard> {
   Color _getCardColor(String scenarioId) {
     switch (scenarioId) {
       case 'hospital':
-        return const Color(0xFF4DD8F0);  // Bright cyan blue
+        return const Color(0xFF4DD8F0); // Bright cyan blue
       case 'bank':
-        return const Color(0xFFFFD600);  // Pure saturated yellow
+        return const Color(0xFFFFD600); // Pure saturated yellow
       case 'immigration':
-        return const Color(0xFFC97EE8);  // Rich lavender
+        return const Color(0xFFC97EE8); // Rich lavender
       default:
         return const Color(0xFFF5F5F5);
     }
@@ -163,11 +164,11 @@ class _ScenarioCardState extends State<_ScenarioCard> {
   Color _getShadowColor(String scenarioId) {
     switch (scenarioId) {
       case 'hospital':
-        return const Color(0xFF2BA8C0);  // Darker cyan
+        return const Color(0xFF2BA8C0); // Darker cyan
       case 'bank':
-        return const Color(0xFFC9A800);  // Darker yellow
+        return const Color(0xFFC9A800); // Darker yellow
       case 'immigration':
-        return const Color(0xFFA05EC0);  // Darker purple
+        return const Color(0xFFA05EC0); // Darker purple
       default:
         return Colors.grey.shade400;
     }
@@ -194,8 +195,7 @@ class _ScenarioCardState extends State<_ScenarioCard> {
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 150),
-      transform: Matrix4.identity()
-        ..translate(0, _isPressed ? -4 : 0),
+      transform: Matrix4.identity()..translate(0, _isPressed ? -4 : 0),
       transformAlignment: Alignment.center,
       decoration: BoxDecoration(
         color: cardColor,
@@ -220,7 +220,7 @@ class _ScenarioCardState extends State<_ScenarioCard> {
             Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (_) => ScenarioScreen(scenario: widget.scenario),
+                builder: (_) => VocabPrepScreen(scenario: widget.scenario),
               ),
             );
           },
@@ -232,8 +232,11 @@ class _ScenarioCardState extends State<_ScenarioCard> {
               children: [
                 // Emoji icon
                 Text(
-                  widget.scenario.id == 'hospital' ? '🏥' :
-                  widget.scenario.id == 'bank' ? '🏦' : '🛂',
+                  widget.scenario.id == 'hospital'
+                      ? '🏥'
+                      : widget.scenario.id == 'bank'
+                          ? '🏦'
+                          : '🛂',
                   style: const TextStyle(fontSize: 44),
                 ),
                 const SizedBox(width: 16),
